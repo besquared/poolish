@@ -1,50 +1,32 @@
-use std::{
-  io::{Cursor, Read},
-  sync::{
-    Arc,
-    atomic::AtomicU64
+use std::ptr::NonNull;
+
+#[derive(Clone, Debug)]
+pub struct BufferFrame(NonNull<[u8]>, usize);
+
+impl AsRef<[u8]> for BufferFrame {
+  fn as_ref(&self) -> &[u8] {
+    unsafe {
+      let as_ref = self.pointer().as_ref();
+      std::slice::from_raw_parts(as_ref.as_ptr(), self.1)
+    }
   }
-};
+}
 
-use anyhow::Result;
-
-use crate::BufferRef;
-
-/**
- *
- * A buffer frame represents a single page-sized block of memory
- *
- */
-
-#[derive(Debug)]
-pub struct BufferFrame {
-  dirty: bool,
-  latch: AtomicU64,
-  buffer: Cursor<BufferRef>
+impl AsMut<[u8]> for BufferFrame {
+  fn as_mut(&mut self) -> &mut [u8] {
+    unsafe {
+      let as_mut_ptr = self.pointer().as_mut_ptr();
+      std::slice::from_raw_parts_mut(as_mut_ptr, self.1)
+    }
+  }
 }
 
 impl BufferFrame {
-  pub fn try_new(buffer: BufferRef) -> Result<Self> {
-    let mut buffer = Cursor::new(buffer);
-
-    Ok(Self {
-      buffer,
-      dirty: false,
-      latch: AtomicU64::new(0)
-    })
+  fn pointer(&self) -> NonNull<[u8]> {
+    self.0
   }
 
-  pub fn page_id(&mut self) -> Result<u64> {
-    let mut bytes = [0u8; 8];
-    self.buffer.set_position(0);
-    self.buffer.read_exact(&mut bytes)?;
-    Ok(u64::from_le_bytes(bytes))
-  }
-
-  pub fn page_class(&mut self) -> Result<u8> {
-    let mut bytes = [0u8; 1];
-    self.buffer.set_position(7);
-    self.buffer.read_exact(&mut bytes)?;
-    Ok(u8::from_le_bytes(bytes))
+  pub fn new(buffer: &[u8]) -> Self {
+    Self(NonNull::from(buffer), buffer.len())
   }
 }

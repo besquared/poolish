@@ -1,20 +1,13 @@
-mod buffer_ref;
 mod buffer_frame;
+mod buffer_page;
 mod buffer_pool;
-mod buffer_swip;
 
-use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::Result;
 
-use memmap2::{
-  MmapMut,
-  MmapOptions
-};
-
-pub use buffer_ref::*;
 pub use buffer_frame::*;
+pub use buffer_page::*;
 pub use buffer_pool::*;
-pub use buffer_swip::*;
 
 // const SIZE_CLASSES: [usize; 20] = [
 //   2^12, 2^13, 2^14, 2^15, //   4k,   8k,  16k,  32k
@@ -26,10 +19,19 @@ pub use buffer_swip::*;
 
 #[derive(Debug)]
 pub struct BufferManager {
+  counter: AtomicU64,
   buffers: [BufferPool; 20]
 }
 
 impl BufferManager {
+  pub fn alloc(&mut self) -> PageHandle {
+    PageHandle::new(self.counter.fetch_add(1, Ordering::SeqCst))
+  }
+
+  pub fn fetch(&mut self, handle: &PageHandle) -> BufferPage {
+
+  }
+
   pub fn try_new(pool_size: usize) -> Result<Self> {
     let buffers: [BufferPool; 20] = [
       BufferPool::try_new(pool_size, 12)?,
@@ -54,6 +56,9 @@ impl BufferManager {
       BufferPool::try_new(pool_size, 31)?
     ];
 
-    Ok(Self { buffers })
+    // PID sequence
+    let counter = AtomicU64::new(0);
+
+    Ok(Self { buffers, counter })
   }
 }

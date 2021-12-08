@@ -1,59 +1,55 @@
 use anyhow::{ anyhow, Result };
 
 use memmap2::{
-  MmapMut,
-  MmapOptions
+  MmapMut
 };
 
 use std::collections::VecDeque;
-use std::ptr::NonNull;
-use std::sync::Arc;
+use std::sync::{Mutex};
 
-use crate::{BufferRef, BufferFrame, BufferSWIP};
+use crate::{BufferFrame};
 
 #[derive(Debug)]
 pub struct BufferPool {
-  class: u8,
-  size: usize,
-  buffer: MmapMut,
-  free_frames: VecDeque<BufferFrame>,
-  used_frames: VecDeque<BufferFrame>
+  data: MmapMut,
+  page_type: u8,
+  free_frames: Mutex<VecDeque<BufferFrame>>,
+  used_frames: Mutex<VecDeque<BufferFrame>>
 }
 
 impl BufferPool {
-  pub fn class(&self) -> u8 {
-    self.class
-  }
-
-  pub fn size(&self) -> usize {
-    self.size
+  pub fn page_type(&self) -> u8 {
+    self.page_type
   }
 
   pub fn page_size(&self) -> usize {
-    usize::pow(2usize, u32::from(self.class()))
+    usize::pow(2usize, u32::from(self.page_type()))
   }
-  pub fn try_new(size: usize, page_class: u8) -> Result<Self> {
-    let page_size = usize::pow(2usize, u32::from(page_class));
+
+  pub fn try_new(size_in_bytes: usize, page_type: u8) -> Result<Self> {
+    let page_size = usize::pow(2usize, u32::from(page_type));
 
     if page_size > usize::pow(2usize, 31u32) {
       return Err(anyhow!("Buffer pool page size cannot be greater than 2gb"))
     }
 
-    if size % page_size != 0 {
-      return Err(anyhow!("Buffer pool size is not evenly divisible by page size, {}, {}", size, page_size))
+    if size_in_bytes % page_size != 0 {
+      return Err(anyhow!("Buffer pool size is not evenly divisible by page size, {}, {}", size_in_bytes, page_size))
     }
 
     // Allocate virtual memory
-    let buffer = MmapMut::map_anon(size)?;
+    let data = MmapMut::map_anon(size_in_bytes)?;
 
     let used_frames = VecDeque::new();
     let mut free_frames = VecDeque::new();
-    for offset in (0..size).step_by(page_size) {
+    for offset in (0..size_in_bytes).step_by(page_size) {
       let range = offset .. (offset + page_size);
-      let buffer_ref = BufferRef::new(&buffer[range]);
-      free_frames.push_back(BufferFrame::try_new(buffer_ref)?)
+      free_frames.push_back(BufferFrame::new(&data[range]))
     }
 
-    Ok(Self { size, class: page_class, buffer, free_frames, used_frames })
+    let used_frames = Mutex::new(used_frames);
+    let free_frames = Mutex::new(free_frames);
+
+    Ok(Self { data, page_type, free_frames, used_frames })
   }
 }
