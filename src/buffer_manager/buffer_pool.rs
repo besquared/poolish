@@ -7,27 +7,38 @@ use memmap2::{
 use std::collections::VecDeque;
 use std::sync::{Mutex};
 
-use crate::{BufferFrame};
+use crate::{BufferFrame, BufferPage, PageHandle};
 
 #[derive(Debug)]
 pub struct BufferPool {
+  class: u8,
   data: MmapMut,
-  page_type: u8,
-  free_frames: Mutex<VecDeque<BufferFrame>>,
-  used_frames: Mutex<VecDeque<BufferFrame>>
+  frames: Vec<BufferFrame>
 }
 
 impl BufferPool {
-  pub fn page_type(&self) -> u8 {
-    self.page_type
+  pub fn class(&self) -> u8 {
+    self.class
   }
 
   pub fn page_size(&self) -> usize {
-    usize::pow(2usize, u32::from(self.page_type()))
+    usize::pow(2usize, u32::from(self.class()))
   }
 
-  pub fn try_new(size_in_bytes: usize, page_type: u8) -> Result<Self> {
-    let page_size = usize::pow(2usize, u32::from(page_type));
+  pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<BufferPage> {
+    let class = self.class();
+    for frame in self.frames.iter_mut() {
+      if !frame.is_active() {
+        frame.activate();
+        return Ok(BufferPage::try_alloc(frame, class, handle)?);
+      }
+    }
+
+    Err(anyhow!("No free frames found in buffer pool"))
+  }
+
+  pub fn try_new(size_in_bytes: usize, class: u8) -> Result<Self> {
+    let page_size = usize::pow(2usize, u32::from(class));
 
     if page_size > usize::pow(2usize, 31u32) {
       return Err(anyhow!("Buffer pool page size cannot be greater than 2gb"))
@@ -40,16 +51,13 @@ impl BufferPool {
     // Allocate virtual memory
     let data = MmapMut::map_anon(size_in_bytes)?;
 
-    let used_frames = VecDeque::new();
-    let mut free_frames = VecDeque::new();
+    let mut frames = Vec::new();
     for offset in (0..size_in_bytes).step_by(page_size) {
       let range = offset .. (offset + page_size);
-      free_frames.push_back(BufferFrame::new(&data[range]))
+      frames.push(BufferFrame::new(&data[range]))
     }
 
-    let used_frames = Mutex::new(used_frames);
-    let free_frames = Mutex::new(free_frames);
 
-    Ok(Self { data, page_type, free_frames, used_frames })
+    Ok(Self { class, data, frames })
   }
 }

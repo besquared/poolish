@@ -6,10 +6,10 @@ use std::{
   sync::atomic::AtomicU64
 };
 
-use std::io::{Write};
+use std::io::{Cursor, Seek, SeekFrom, Write};
 use std::sync::atomic::Ordering;
 
-use anyhow::Result;
+use anyhow::{ anyhow, Result };
 use crate::BufferFrame;
 
 pub use page_guard::*;
@@ -34,8 +34,8 @@ pub use page_latch::*;
 
 #[derive(Debug)]
 pub struct BufferPage<'a> {
-  frame: BufferFrame,
-  latch: PageLatch<'a>
+  latch: PageLatch<'a>,
+  frame: &'a mut BufferFrame
 }
 
 /**
@@ -56,16 +56,20 @@ impl<'a> BufferPage<'a> {
 
   pub fn class(&self) -> u8 {
     let bytes = self.frame.as_ref();
-    u8::from_le_bytes([ bytes[8] ])
+    u8::from_le_bytes([bytes[8]])
   }
 
   pub fn dirty(&self) -> u8 {
     let bytes = self.frame.as_ref();
-    u8::from_le_bytes([ bytes[9] ])
+    u8::from_le_bytes([bytes[9]])
   }
 
   pub fn latch(&self) -> &PageLatch {
     &self.latch
+  }
+
+  pub fn version(&self) -> u64 {
+    self.latch().version()
   }
 
   pub fn header_len(&self) -> usize {
@@ -75,10 +79,10 @@ impl<'a> BufferPage<'a> {
   pub fn read<W: AsRef<[u8]> + Write>(&self, offset: usize, dest: &mut W) -> Result<usize> {
     let bytes = self.frame.as_ref();
     let offset = offset + self.header_len();
-    Ok(dest.write(&bytes[offset .. offset + dest.as_ref().len()])?)
+    Ok(dest.write(&bytes[offset..offset + dest.as_ref().len()])?)
   }
 
-  pub fn try_new(mut frame: BufferFrame) -> Result<Self> {
+  pub fn try_load(frame: &'a mut BufferFrame) -> Result<Self> {
     let bytes = frame.as_mut();
 
     let latch = unsafe {
@@ -88,7 +92,33 @@ impl<'a> BufferPage<'a> {
 
     let latch = PageLatch::new(latch);
 
-    Ok(Self { frame, latch })
+    Ok(Self { latch, frame })
+  }
+
+  pub fn try_alloc(frame: &'a mut BufferFrame, class: u8, handle: &mut PageHandle) -> Result<Self> {
+    if handle.is_swizzled() {
+      return Err(anyhow!("Cannot allocate an already allocated page handle"))
+    }
+
+    let pid = handle.value();
+    let bytes = frame.as_mut();
+
+    // swizzle page handle here
+    handle.swizzle(bytes.as_ref());
+
+    let mut cursor = Cursor::new(bytes);
+
+    // Seek to frame header
+    cursor.seek(SeekFrom::Start(0))?;
+
+    // Write header information
+    cursor.write(&pid.to_le_bytes());
+    cursor.write(&class.to_le_bytes())?;
+    cursor.write(&1u8.to_le_bytes())?;
+    cursor.write(&0u64.to_le_bytes())?;
+    cursor.write(&0u64.to_le_bytes())?;
+
+    Self::try_load(frame)
   }
 }
 

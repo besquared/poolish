@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // A versioned latch with a 48 bit version and a 16 bit state
 //
 
+#[derive(Debug)]
 pub struct PageLatch<'a>(&'a AtomicU64);
 
 pub const STATE_MASK: u64 = 0x0000_0000_0000_00FF;

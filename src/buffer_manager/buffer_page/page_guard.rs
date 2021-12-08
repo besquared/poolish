@@ -5,14 +5,20 @@ use std::io::Write;
 
 use crate::BufferPage;
 
+#[derive(Debug)]
 pub enum PageGuard<'a> {
   Shared(SharedPageGuard<'a>),
   Exclusive(ExclusivePageGuard<'a>),
   Optimistic(OptimisticPageGuard<'a>)
 }
 
+#[derive(Debug)]
 pub struct SharedPageGuard<'a>(&'a mut BufferPage<'a>);
+
+#[derive(Debug)]
 pub struct ExclusivePageGuard<'a>(&'a mut BufferPage<'a>);
+
+#[derive(Debug)]
 pub struct OptimisticPageGuard<'a>(&'a mut BufferPage<'a>, u64);
 
 impl<'a> OptimisticPageGuard<'a> {
@@ -25,6 +31,7 @@ impl<'a> OptimisticPageGuard<'a> {
   }
 
   pub fn unlock(mut self) -> () {
+    todo!()
     // returns the new version number
     // update version here once we unlock
   }
@@ -37,9 +44,9 @@ impl<'a> OptimisticPageGuard<'a> {
     }
 
     loop {
-      if self.page().latch() == 1u64 {
+      if self.page().latch().is_exclusive() {
         // Wait on access to this page
-        while self.page().latch() == 1u64 {
+        while self.page().latch().is_exclusive() {
           core::hint::spin_loop();
         }
       }  else {
