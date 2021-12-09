@@ -1,11 +1,13 @@
-use anyhow::{ anyhow, Result };
+use std::cell::RefCell;
+use anyhow::{anyhow, Result };
 
 use memmap2::{
   MmapMut
 };
 
 use std::collections::VecDeque;
-use std::sync::{Mutex};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 
 use crate::{BufferFrame, BufferPage, PageHandle};
 
@@ -13,7 +15,7 @@ use crate::{BufferFrame, BufferPage, PageHandle};
 pub struct BufferPool {
   class: u8,
   data: MmapMut,
-  frames: Vec<BufferFrame>
+  frames: Mutex<VecDeque<Arc<RefCell<BufferFrame>>>>
 }
 
 impl BufferPool {
@@ -26,11 +28,19 @@ impl BufferPool {
   }
 
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<BufferPage> {
+    let mut frames = match self.frames.try_lock() {
+      Ok(frames) => frames,
+      Err(err) => return Err(anyhow!(err.to_string()))
+    };
+
     let class = self.class();
-    for frame in self.frames.iter_mut() {
-      if !frame.is_active() {
-        frame.activate();
-        return Ok(BufferPage::try_alloc(frame, class, handle)?);
+    if let Some(mut frame) = frames.pop_front() {
+      if !frame.borrow().is_active() {
+        frame.borrow_mut().activate();
+        let page = BufferPage::try_alloc(frame.clone(), class, handle)?;
+        frames.push_back(frame);
+
+        return Ok(page);
       }
     }
 
@@ -51,12 +61,12 @@ impl BufferPool {
     // Allocate virtual memory
     let data = MmapMut::map_anon(size_in_bytes)?;
 
-    let mut frames = Vec::new();
+    let mut frames = VecDeque::new();
     for offset in (0..size_in_bytes).step_by(page_size) {
       let range = offset .. (offset + page_size);
-      frames.push(BufferFrame::new(&data[range]))
+      frames.push_back(Arc::new(RefCell::new(BufferFrame::new(&data[range]))))
     }
-
+    let frames = Mutex::new(frames);
 
     Ok(Self { class, data, frames })
   }

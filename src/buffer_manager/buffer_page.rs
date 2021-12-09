@@ -5,8 +5,12 @@ mod page_latch;
 use std::{
   sync::atomic::AtomicU64
 };
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::RefCell;
 
 use std::io::{Cursor, Seek, SeekFrom, Write};
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use anyhow::{ anyhow, Result };
@@ -32,10 +36,12 @@ pub use page_latch::*;
  *
  */
 
+const HEADER_LEN: usize = 34usize;
+
 #[derive(Debug)]
 pub struct BufferPage<'a> {
   latch: PageLatch<'a>,
-  frame: &'a mut BufferFrame
+  frame: Arc<RefCell<BufferFrame>>
 }
 
 /**
@@ -46,7 +52,7 @@ pub struct BufferPage<'a> {
 
 impl<'a> BufferPage<'a> {
   pub fn id(&self) -> u64 {
-    let bytes = self.frame.as_ref();
+    let bytes = self.bytes();
 
     u64::from_le_bytes([
       bytes[0], bytes[1], bytes[2], bytes[3],
@@ -55,12 +61,12 @@ impl<'a> BufferPage<'a> {
   }
 
   pub fn class(&self) -> u8 {
-    let bytes = self.frame.as_ref();
+    let bytes = self.bytes();
     u8::from_le_bytes([bytes[8]])
   }
 
   pub fn dirty(&self) -> u8 {
-    let bytes = self.frame.as_ref();
+    let bytes = self.bytes();
     u8::from_le_bytes([bytes[9]])
   }
 
@@ -72,18 +78,30 @@ impl<'a> BufferPage<'a> {
     self.latch().version()
   }
 
-  pub fn header_len(&self) -> usize {
-    34usize
+  pub fn bytes(&self) -> &[u8] {
+    self.frame().as_ref()
+  }
+
+  pub fn bytes_mut(&mut self) -> &mut [u8] {
+    self.frame_mut().as_mut()
+  }
+
+  pub fn frame(&self) -> &BufferFrame {
+    self.frame.as_ref().borrow().deref()
+  }
+
+  pub fn frame_mut(&mut self) -> &mut BufferFrame {
+    self.frame.as_ref().borrow_mut().deref_mut()
   }
 
   pub fn read<W: AsRef<[u8]> + Write>(&self, offset: usize, dest: &mut W) -> Result<usize> {
-    let bytes = self.frame.as_ref();
-    let offset = offset + self.header_len();
+    let bytes = self.bytes();
+    let offset = offset + HEADER_LEN;
     Ok(dest.write(&bytes[offset..offset + dest.as_ref().len()])?)
   }
 
-  pub fn try_load(frame: &'a mut BufferFrame) -> Result<Self> {
-    let bytes = frame.as_mut();
+  pub fn try_load(mut frame: Arc<RefCell<BufferFrame>>) -> Result<Self> {
+    let bytes = frame.as_ref().borrow_mut().deref_mut().as_mut();
 
     let latch = unsafe {
       let pointer = &mut bytes[10];
@@ -95,16 +113,16 @@ impl<'a> BufferPage<'a> {
     Ok(Self { latch, frame })
   }
 
-  pub fn try_alloc(frame: &'a mut BufferFrame, class: u8, handle: &mut PageHandle) -> Result<Self> {
+  pub fn try_alloc(mut frame: Arc<RefCell<BufferFrame>>, class: u8, handle: &mut PageHandle) -> Result<Self> {
     if handle.is_swizzled() {
       return Err(anyhow!("Cannot allocate an already allocated page handle"))
     }
 
     let pid = handle.value();
-    let bytes = frame.as_mut();
+    let bytes = frame.as_ref().borrow_mut().as_mut();
 
     // swizzle page handle here
-    handle.swizzle(bytes.as_ref());
+    handle.swizzle(bytes.as_ref().as_ptr() as u64);
 
     let mut cursor = Cursor::new(bytes);
 

@@ -24,8 +24,8 @@ impl PageHandle {
     self.0.swap(pid, Ordering::SeqCst)
   }
 
-  pub fn swizzle(&mut self, address: &[u8]) -> i64 {
-    self.0.swap(address.as_ptr() as i64, Ordering::SeqCst)
+  pub fn swizzle(&mut self, address: u64) -> i64 {
+    self.0.swap(address as i64, Ordering::SeqCst)
   }
 
   pub fn new(pid: i64) -> Self {
