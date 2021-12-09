@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub struct BufferFrame(Arc<NonNull<[u8]>>, usize, bool);
+pub struct BufferFrame(usize, usize, bool);
 
 impl AsRef<[u8]> for BufferFrame {
   fn as_ref(&self) -> &[u8] {
@@ -17,6 +17,12 @@ impl AsMut<[u8]> for BufferFrame {
     unsafe {
       std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())
     }
+  }
+}
+
+impl AsMut<BufferFrame> for BufferFrame {
+  fn as_mut(&mut self) -> &mut BufferFrame {
+    &mut self
   }
 }
 
@@ -38,16 +44,22 @@ impl BufferFrame {
   }
 
   pub fn new(buffer: &[u8]) -> Self {
-    Self(Arc::new(NonNull::from(buffer)), buffer.len(), false)
+    unsafe {
+      Self(std::mem::transmute::<&[u8], usize>(buffer), buffer.len(), false)
+    }
   }
 
   // Internal
 
   fn as_ptr(&self) -> *const u8 {
-    self.0.as_mut_ptr()
+    unsafe {
+      std::mem::transmute::<usize, *const u8>(self.0)
+    }
   }
 
   fn as_mut_ptr(&self) -> *mut u8 {
-    self.0.as_mut_ptr()
+    unsafe {
+      std::mem::transmute::<usize, *mut u8>(self.0)
+    }
   }
 }

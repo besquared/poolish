@@ -41,7 +41,7 @@ const HEADER_LEN: usize = 34usize;
 #[derive(Debug)]
 pub struct BufferPage<'a> {
   latch: PageLatch<'a>,
-  frame: Arc<RefCell<BufferFrame>>
+  frame: Arc<BufferFrame>
 }
 
 /**
@@ -87,11 +87,11 @@ impl<'a> BufferPage<'a> {
   }
 
   pub fn frame(&self) -> &BufferFrame {
-    self.frame.as_ref().borrow().deref()
+    self.frame.as_ref()
   }
 
   pub fn frame_mut(&mut self) -> &mut BufferFrame {
-    self.frame.as_ref().borrow_mut().deref_mut()
+    self.frame.as_mut()
   }
 
   pub fn read<W: AsRef<[u8]> + Write>(&self, offset: usize, dest: &mut W) -> Result<usize> {
@@ -100,8 +100,8 @@ impl<'a> BufferPage<'a> {
     Ok(dest.write(&bytes[offset..offset + dest.as_ref().len()])?)
   }
 
-  pub fn try_load(mut frame: Arc<RefCell<BufferFrame>>) -> Result<Self> {
-    let bytes = frame.as_ref().borrow_mut().deref_mut().as_mut();
+  pub fn try_load(mut frame: Arc<BufferFrame>) -> Result<Self> {
+    let bytes = frame.as_ref().as_mut();
 
     let latch = unsafe {
       let pointer = &mut bytes[10];
@@ -113,13 +113,13 @@ impl<'a> BufferPage<'a> {
     Ok(Self { latch, frame })
   }
 
-  pub fn try_alloc(mut frame: Arc<RefCell<BufferFrame>>, class: u8, handle: &mut PageHandle) -> Result<Self> {
+  pub fn try_alloc(mut frame: Arc<BufferFrame>, class: u8, handle: &mut PageHandle) -> Result<Self> {
     if handle.is_swizzled() {
       return Err(anyhow!("Cannot allocate an already allocated page handle"))
     }
 
     let pid = handle.value();
-    let bytes = frame.as_ref().borrow_mut().as_mut();
+    let bytes = frame.as_ref().as_mut();
 
     // swizzle page handle here
     handle.swizzle(bytes.as_ref().as_ptr() as u64);

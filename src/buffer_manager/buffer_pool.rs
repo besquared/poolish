@@ -15,7 +15,7 @@ use crate::{BufferFrame, BufferPage, PageHandle};
 pub struct BufferPool {
   class: u8,
   data: MmapMut,
-  frames: Mutex<VecDeque<Arc<RefCell<BufferFrame>>>>
+  frames: Mutex<VecDeque<Arc<BufferFrame>>>
 }
 
 impl BufferPool {
@@ -35,8 +35,8 @@ impl BufferPool {
 
     let class = self.class();
     if let Some(mut frame) = frames.pop_front() {
-      if !frame.borrow().is_active() {
-        frame.borrow_mut().activate();
+      if !frame.is_active() {
+        frame.activate();
         let page = BufferPage::try_alloc(frame.clone(), class, handle)?;
         frames.push_back(frame);
 
@@ -64,7 +64,7 @@ impl BufferPool {
     let mut frames = VecDeque::new();
     for offset in (0..size_in_bytes).step_by(page_size) {
       let range = offset .. (offset + page_size);
-      frames.push_back(Arc::new(RefCell::new(BufferFrame::new(&data[range]))))
+      frames.push_back(Arc::new(BufferFrame::new(&data[range])))
     }
     let frames = Mutex::new(frames);
 
