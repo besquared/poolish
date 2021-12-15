@@ -1,21 +1,23 @@
-use std::cell::RefCell;
 use anyhow::{anyhow, Result };
 
 use memmap2::{
   MmapMut
 };
 
-use std::collections::VecDeque;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+
+use std::{
+  collections::VecDeque,
+  sync::{ Arc }
+};
 
 use crate::{BufferFrame, BufferPage, PageHandle};
 
 #[derive(Debug)]
 pub struct BufferPool {
   class: u8,
-  data: MmapMut,
-  frames: Mutex<VecDeque<Arc<BufferFrame>>>
+  data: Arc<MmapMut>,
+  frames: Arc<Mutex<VecDeque<BufferFrame>>>
 }
 
 impl BufferPool {
@@ -29,15 +31,15 @@ impl BufferPool {
 
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<BufferPage> {
     let mut frames = match self.frames.try_lock() {
-      Ok(frames) => frames,
-      Err(err) => return Err(anyhow!(err.to_string()))
+      Some(frames) => frames,
+      None => return Err(anyhow!("Cannot acquire buffer pool lock {:?}", self.class))
     };
 
     let class = self.class();
     if let Some(mut frame) = frames.pop_front() {
       if !frame.is_active() {
         frame.activate();
-        let page = BufferPage::try_alloc(frame.clone(), class, handle)?;
+        let page = BufferPage::try_alloc(class, handle, frame.clone())?;
         frames.push_back(frame);
 
         return Ok(page);
@@ -63,10 +65,12 @@ impl BufferPool {
 
     let mut frames = VecDeque::new();
     for offset in (0..size_in_bytes).step_by(page_size) {
-      let range = offset .. (offset + page_size);
-      frames.push_back(Arc::new(BufferFrame::new(&data[range])))
+      let ptr = data.get(offset).unwrap() as *const u8;
+      frames.push_back(BufferFrame::new(ptr, page_size));
     }
-    let frames = Mutex::new(frames);
+
+    let data = Arc::new(data);
+    let frames = Arc::new(Mutex::new(frames));
 
     Ok(Self { class, data, frames })
   }

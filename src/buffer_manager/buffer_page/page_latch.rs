@@ -38,7 +38,7 @@ impl<'a> PageLatch<'a> {
     }
   }
 
-  // Ways to basically latch this in various ways
+  // TODO: Add ways to basically latch this in various ways
 
   pub fn new(latch: &'a AtomicU64) -> Self {
     Self(latch)

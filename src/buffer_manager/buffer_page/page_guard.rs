@@ -30,7 +30,7 @@ impl<'a> OptimisticPageGuard<'a> {
     self.1
   }
 
-  pub fn unlock(mut self) -> () {
+  pub fn unlock(self) -> () {
     todo!()
     // returns the new version number
     // update version here once we unlock

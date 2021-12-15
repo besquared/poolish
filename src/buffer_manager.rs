@@ -28,7 +28,7 @@ impl BufferManager {
     PageHandle::new(self.counter.fetch_sub(1, Ordering::SeqCst))
   }
 
-  pub fn try_alloc(&mut self, handle: &mut PageHandle, size: usize) -> Result<BufferPage> {
+  pub fn try_alloc(&mut self, handle: &mut PageHandle, _size: usize) -> Result<BufferPage> {
     if handle.is_fizzled() {
       self.buffers[0].try_alloc(handle)
     } else {
@@ -61,7 +61,7 @@ impl BufferManager {
     ];
 
     // PID sequence
-    let counter = AtomicI64::new(0);
+    let counter = AtomicI64::new(-1);
 
     Ok(Self { buffers, counter })
   }

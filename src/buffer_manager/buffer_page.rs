@@ -3,17 +3,12 @@ mod page_handle;
 mod page_latch;
 
 use std::{
+  io::{Cursor, Seek, SeekFrom, Write},
   sync::atomic::AtomicU64
 };
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
-
-use std::io::{Cursor, Seek, SeekFrom, Write};
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use anyhow::{ anyhow, Result };
+
 use crate::BufferFrame;
 
 pub use page_guard::*;
@@ -40,8 +35,8 @@ const HEADER_LEN: usize = 34usize;
 
 #[derive(Debug)]
 pub struct BufferPage<'a> {
-  latch: PageLatch<'a>,
-  frame: Arc<BufferFrame>
+  frame: BufferFrame,
+  latch: PageLatch<'a>
 }
 
 /**
@@ -79,18 +74,10 @@ impl<'a> BufferPage<'a> {
   }
 
   pub fn bytes(&self) -> &[u8] {
-    self.frame().as_ref()
-  }
-
-  pub fn bytes_mut(&mut self) -> &mut [u8] {
-    self.frame_mut().as_mut()
-  }
-
-  pub fn frame(&self) -> &BufferFrame {
     self.frame.as_ref()
   }
 
-  pub fn frame_mut(&mut self) -> &mut BufferFrame {
+  pub fn bytes_mut(&mut self) -> &mut [u8] {
     self.frame.as_mut()
   }
 
@@ -100,8 +87,8 @@ impl<'a> BufferPage<'a> {
     Ok(dest.write(&bytes[offset..offset + dest.as_ref().len()])?)
   }
 
-  pub fn try_load(mut frame: Arc<BufferFrame>) -> Result<Self> {
-    let bytes = frame.as_ref().as_mut();
+  pub fn try_load(mut frame: BufferFrame) -> Result<Self> {
+    let bytes = frame.as_mut();
 
     let latch = unsafe {
       let pointer = &mut bytes[10];
@@ -113,13 +100,13 @@ impl<'a> BufferPage<'a> {
     Ok(Self { latch, frame })
   }
 
-  pub fn try_alloc(mut frame: Arc<BufferFrame>, class: u8, handle: &mut PageHandle) -> Result<Self> {
+  pub fn try_alloc(class: u8, handle: &mut PageHandle, mut frame: BufferFrame) -> Result<Self> {
     if handle.is_swizzled() {
-      return Err(anyhow!("Cannot allocate an already allocated page handle"))
+      return Err(anyhow!("Cannot allocate an already allocated page handle {:?}", handle))
     }
 
     let pid = handle.value();
-    let bytes = frame.as_ref().as_mut();
+    let bytes = frame.as_mut();
 
     // swizzle page handle here
     handle.swizzle(bytes.as_ref().as_ptr() as u64);
@@ -130,7 +117,7 @@ impl<'a> BufferPage<'a> {
     cursor.seek(SeekFrom::Start(0))?;
 
     // Write header information
-    cursor.write(&pid.to_le_bytes());
+    cursor.write(&pid.to_le_bytes())?;
     cursor.write(&class.to_le_bytes())?;
     cursor.write(&1u8.to_le_bytes())?;
     cursor.write(&0u64.to_le_bytes())?;
