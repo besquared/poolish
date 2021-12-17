@@ -23,7 +23,7 @@ impl<'a> OptimisticPageGuard<'a> {
 
   // Returns None if a read couldn't be performed due to a version mismatch
   //  Otherwise returns Some(usize) which is the number of bytes written/read
-  pub fn try_read<W: AsRef<[u8]> + Write>(&'a mut self, offset: usize, dest: &mut W) -> Result<Option<usize>> {
+  pub fn try_read<W: AsRef<[u8]> + Write>(&'a mut self, offset: usize, len: usize, dest: &mut W) -> Result<Option<usize>> {
     let mut value = self.latch().load();
     let mut state = PageLatch::state(value);
     let mut version = PageLatch::version(value);
@@ -43,7 +43,7 @@ impl<'a> OptimisticPageGuard<'a> {
         }
       }  else {
         // Read into dest buffer
-        let dest_bytes = self.latch().page().frame().read(offset, dest)?;
+        let dest_bytes = self.latch().frame().read(offset, len, dest)?;
 
         // Recheck version
         return if version != self.version() {

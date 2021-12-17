@@ -4,7 +4,7 @@
 //
 
 use anyhow::Result;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 /**
  *
@@ -29,7 +29,7 @@ const LATCH_LEN: usize = 8;
 const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
 
 #[derive(Clone, Debug)]
-pub struct BufferFrame(*const u8, usize, bool);
+pub struct BufferFrame(*const u8, usize);
 
 // Allow passing frames between threads
 //  This works because all interaction with a
@@ -58,30 +58,45 @@ impl BufferFrame {
     self.1
   }
 
-  pub fn is_active(&self) -> bool {
-    self.2
+  pub fn pid(&self) -> i64 {
+    let b = self.as_ref();
+    i64::from_le_bytes([ b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] ])
   }
 
-  pub fn activate(&mut self) {
-    self.2 = true
+  pub fn pid_ref(&mut self) -> &mut u8 {
+    self.as_mut().get_mut(0).unwrap()
   }
 
-  pub fn deactivate(&mut self) {
-    self.2 = false
+  pub fn class_ref(&mut self) -> &mut u8 {
+    self.as_mut().get_mut(8).unwrap()
+  }
+
+  pub fn dirty_ref(&mut self) -> &mut u8 {
+    self.as_mut().get_mut(9).unwrap()
+  }
+
+  pub fn latch_ref(&mut self) -> &mut u8 {
+    self.as_mut().get_mut(10).unwrap()
   }
 
   // todo: if dest is longer than the frame then only read up to the end of the frame
-  pub fn read<W: AsRef<[u8]> + Write>(&self, offset: usize, dest: &mut W) -> Result<usize> {
+  pub fn read<W: Write>(&self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
     let bytes = self.as_ref();
     let offset = HEADER_LEN + offset;
-    Ok(dest.write(&bytes[offset..offset + dest.as_ref().len()])?)
+    Ok(dest.write(&bytes[offset..offset + len])?)
+  }
+
+  pub fn write<R: Read>(&mut self, offset: usize, len: usize, src: &mut R) -> Result<usize> {
+    let bytes = self.as_mut();
+    let offset = HEADER_LEN + offset;
+    Ok(src.read(&mut bytes[offset .. offset + len])?)
   }
 
   pub fn new(ptr: *const u8, len: usize) -> Self {
-    Self(ptr, len, false)
+    Self(ptr, len)
   }
 
-  pub fn try_alloc(&mut self, pid: i64, class: u8, dirty: u8, latch: u64) -> Result<()> {
+  pub fn activate(&mut self, pid: i64, class: u8, dirty: u8, latch: u64) -> Result<()> {
     let mut cursor = Cursor::new(self.as_mut());
 
     cursor.write(&pid.to_le_bytes())?;
@@ -100,5 +115,15 @@ impl BufferFrame {
 
   fn as_mut_ptr(&self) -> *mut u8 {
     self.0 as *mut u8
+  }
+}
+
+impl std::fmt::Binary for BufferFrame {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let bytes = self.as_ref();
+    for offset in 0..self.len() {
+      std::fmt::Binary::fmt(&bytes[offset], f)?
+    }
+    Ok(())
   }
 }

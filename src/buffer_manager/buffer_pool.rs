@@ -34,16 +34,15 @@ impl BufferPool {
 
     let class = self.class();
     if let Some(mut frame) = frames.pop_front() {
-      if !frame.is_active() {
+      if frame.pid() == 0 {
         let pid = handle.value();
-        frame.try_alloc(pid, class, 1u8, 0u64)?;
+        frame.activate(pid, class, 1u8, 0u64)?;
         handle.swizzle(frame.as_ref().as_ptr() as u64);
-        let page = BufferPage::try_load(pid, frame.clone())?;
+        let page = PageLatch::new(frame.clone());
 
-        frame.activate();
         frames.push_back(frame);
 
-        return Ok(PageLatch::new(page));
+        return Ok(page);
       }
     }
 

@@ -3,6 +3,7 @@
 mod buffer_manager;
 mod storage_manager;
 
+use std::io::Cursor;
 use anyhow::Result;
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -14,8 +15,36 @@ pub use storage_manager::*;
 const POOL_SIZE: usize = usize::pow(2, 31);
 
 fn main() -> Result<()> {
-  let manager = BufferManager::try_new(POOL_SIZE)?;
-  let manager = Arc::new(Mutex::new(manager));
+  let manager = build_buffer_manager()?;
+
+  let mut pages = manager.lock();
+  let mut handle = pages.new_handle();
+  println!("[main] page handle {:?}", handle);
+
+  let mut page_latch = pages.try_alloc(&mut handle, 12).unwrap();
+  println!("[main] page latch {:?}", page_latch);
+
+  println!("Frame is {:b}", &page_latch.frame());
+
+  let mut page_guard = page_latch.acquire_exclusive()?;
+  println!("[main] guard is {:?}", page_guard);
+
+  let data = vec![ 1u8, 2u8, 3u8 ];
+  let mut data = Cursor::new(data);
+
+  page_guard.write(0, 3, &mut data);
+
+  println!("Frame is {:b}", &page_guard.frame());
+
+  Ok(())
+}
+
+fn build_buffer_manager() -> Result<Arc<Mutex<BufferManager>>> {
+  Ok(Arc::new(Mutex::new(BufferManager::try_new(POOL_SIZE)?)))
+}
+
+pub fn thread_test() -> Result<()> {
+  let manager = build_buffer_manager()?;
 
   let m1 = manager.clone();
   let t1 = std::thread::Builder::new();

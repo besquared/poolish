@@ -1,21 +1,25 @@
 use anyhow::{ Result };
 use core::hint::spin_loop;
 use std::sync::atomic::{AtomicU64, Ordering};
-use crate::{BufferFrame, BufferPage, ExclusivePageGuard};
+use crate::{BufferFrame, ExclusivePageGuard};
 
 //
 // A versioned latch with a 48 bit version and a 16 bit state
 //
 
 #[derive(Debug)]
-pub struct PageLatch<'a>(BufferPage, &'a AtomicU64);
+pub struct PageLatch<'a>(BufferFrame, &'a AtomicU64);
 
 pub const STATE_BITS: u64 = 12u64;
 pub const STATE_MASK: u64 = 0x0000_0000_0000_0FFF;
 
 impl<'a> PageLatch<'a> {
-  pub fn page(&self) -> &BufferPage {
+  pub fn frame(&self) -> &BufferFrame {
     &self.0
+  }
+
+  pub fn frame_mut(&mut self) -> &mut BufferFrame {
+    &mut self.0
   }
 
   pub fn value(&self) -> &AtomicU64 {
@@ -26,12 +30,7 @@ impl<'a> PageLatch<'a> {
     self.value().load(Ordering::Acquire)
   }
 
-  fn set_state(&self, value: u64, state: u8) -> Result<u64, u64> {
-    let new_value = Self::with_state(value, u64::from(state));
-    self.value().compare_exchange(value, new_value, Ordering::SeqCst, Ordering::Acquire)
-  }
-
-  pub fn acquire_exclusive(&self) -> Result<ExclusivePageGuard> {
+  pub fn acquire_exclusive(&'a mut self) -> Result<ExclusivePageGuard> {
     loop {
       let mut value = self.load();
       let mut state = Self::state(value);
@@ -39,7 +38,7 @@ impl<'a> PageLatch<'a> {
       if Self::is_open(state) {
         match self.set_state(value, 1u8) {
           Err(_) => continue,
-          Ok(_) => return Ok(ExclusivePageGuard::new(&self))
+          Ok(_) => return Ok(ExclusivePageGuard::new(self))
         }
       }
 
@@ -66,6 +65,16 @@ impl<'a> PageLatch<'a> {
   //   None
   // }
 
+  // Constructors
+
+  pub fn new(mut frame: BufferFrame) -> Self {
+    let value = unsafe {
+      let pointer = frame.latch_ref();
+      Self::make_atomic_u64(std::mem::transmute(pointer))
+    };
+
+    Self(frame, value)
+  }
 
   // Self methods
 
@@ -97,21 +106,16 @@ impl<'a> PageLatch<'a> {
     state == 1
   }
 
-  // I need the frame for this.. The whole premise of this is I have a pointer to the latch
-  pub fn new(page: BufferPage) -> Self {
-    let value = unsafe {
-      let pointer = page.latch().unwrap();
-      Self::make_atomic_u64(std::mem::transmute(pointer))
-    };
-
-    Self(page, value)
-  }
-
   // Helper methods
 
   fn make_atomic_u64(src: &mut u64) -> &AtomicU64 {
     unsafe {
       &*(src as *mut u64 as *const AtomicU64)
     }
+  }
+
+  fn set_state(&self, value: u64, state: u8) -> Result<u64, u64> {
+    let new_value = Self::with_state(value, u64::from(state));
+    self.value().compare_exchange(value, new_value, Ordering::SeqCst, Ordering::Acquire)
   }
 }
