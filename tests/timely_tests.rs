@@ -11,11 +11,10 @@ use timely::{
     InputHandle,
     ProbeHandle,
     operators::{
-      Input, Map, Probe
+      Input, Map, Probe, Broadcast
     }
   }
 };
-use timely::dataflow::operators::{Broadcast, Exchange};
 
 use vex_pages::PageManager;
 
@@ -28,8 +27,8 @@ fn make_page_manager() -> Result<Arc<Mutex<PageManager>>> {
 #[test]
 fn allocates_pages_in_operators() -> Result<()> {
   let pages = make_page_manager()?;
-
   let config = timely::Config::process(2);
+
   timely::execute(config, move |worker| {
     let pages = pages.clone();
     let index = worker.index();
@@ -41,19 +40,22 @@ fn allocates_pages_in_operators() -> Result<()> {
         .broadcast()
         .map(move |rounds| {
           for _ in 0..rounds {
+
             let mut pages = pages.lock().unwrap();
+            let mut handle = pages.new_handle(12);
+            let mut page = pages.try_alloc(&mut handle).unwrap();
 
             // Allocate Handle + Page
-            let mut handle = pages.new_handle();
-            let page = pages.try_alloc(&mut handle, 12).unwrap();
-            println!("[{}] page = {:?}", index, page);
+            println!("[{}] page = {:?}", index, &page);
+
+            let _ = page.acquire_exclusive().unwrap();
           }
         })
         .probe_with(&mut probe);
     });
 
     if index == 0 {
-      input.send(100);
+      input.send(100000);
     }
 
     input.advance_to(1);

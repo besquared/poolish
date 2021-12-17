@@ -29,15 +29,15 @@ const LATCH_LEN: usize = 8;
 const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
 
 #[derive(Clone, Debug)]
-pub struct PageFrame(*const u8, usize);
+pub struct Frame(*const u8, usize);
 
 // Allow passing frames between threads
 //  This works because all interaction with a
 //  frame is done via a latch in the buffer page
-unsafe impl Send for PageFrame {}
-unsafe impl Sync for PageFrame {}
+unsafe impl Send for Frame {}
+unsafe impl Sync for Frame {}
 
-impl AsRef<[u8]> for PageFrame {
+impl AsRef<[u8]> for Frame {
   fn as_ref(&self) -> &[u8] {
     unsafe {
       std::slice::from_raw_parts(self.as_ptr(), self.len())
@@ -45,7 +45,7 @@ impl AsRef<[u8]> for PageFrame {
   }
 }
 
-impl AsMut<[u8]> for PageFrame {
+impl AsMut<[u8]> for Frame {
   fn as_mut(&mut self) -> &mut [u8] {
     unsafe {
       std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())
@@ -53,7 +53,7 @@ impl AsMut<[u8]> for PageFrame {
   }
 }
 
-impl PageFrame {
+impl Frame {
   pub fn len(&self) -> usize {
     self.1
   }
@@ -79,13 +79,14 @@ impl PageFrame {
     self.as_mut().get_mut(10).unwrap()
   }
 
-  // todo: if dest is longer than the frame then only read up to the end of the frame
+  // todo: if dest is longer than the frame then only write up to the end of the frame
   pub fn read<W: Write>(&self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
     let bytes = self.as_ref();
     let offset = HEADER_LEN + offset;
     Ok(dest.write(&bytes[offset..offset + len])?)
   }
 
+  // todo: if src is longer than the frame then only read up to the end of the frame
   pub fn write<R: Read>(&mut self, offset: usize, len: usize, src: &mut R) -> Result<usize> {
     let bytes = self.as_mut();
     let offset = HEADER_LEN + offset;
@@ -118,7 +119,7 @@ impl PageFrame {
   }
 }
 
-impl std::fmt::Binary for PageFrame {
+impl std::fmt::Binary for Frame {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let bytes = self.as_ref();
     for offset in 0..self.len() {

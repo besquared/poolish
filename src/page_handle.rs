@@ -2,35 +2,74 @@ use std::sync::atomic::{
   AtomicI64, Ordering
 };
 
-//
-// A handle to a logical page that may reside either in-memory or on-disk
-//
+/**
+ *
+ * A handle to a page
+ *
+ * When a handle is allocated we store the logical pid, the size class,
+ *  and an atomic i64 ("handle") which stores either the pid if the page is on disk,
+ *  or the virtual memory address of the page if it is in memory
+ *
+ * If a page is uninitialized then the handle will be zero
+ * If a page is on disk (fizzled) then the handle will be negative
+ * If a page is in memory (swizzled) then the handle will be positive
+ *
+ */
 
 #[derive(Debug)]
-pub struct PageHandle(AtomicI64);
+pub struct PageHandle(i64, usize, AtomicI64);
 
 impl PageHandle {
+  pub fn pid(&self) -> i64 {
+    self.0
+  }
+
+  pub fn class(&self) -> usize {
+    self.1
+  }
+
+  pub fn handle(&self) -> &AtomicI64 {
+    &self.2
+  }
+
   pub fn value(&self) -> i64 {
-    self.0.load(Ordering::SeqCst)
+    self.handle().load(Ordering::Acquire)
   }
 
-  pub fn is_fizzled(&self) -> bool {
-    self.value().is_negative()
-  }
-
-  pub fn is_swizzled(&self) -> bool {
-    self.value().is_positive()
+  pub fn state(&self) -> PageHandleState {
+    PageHandleState::new(&self)
   }
 
   pub fn fizzle(&mut self, pid: i64) -> i64 {
-    self.0.swap(pid, Ordering::SeqCst)
+    self.handle().swap(pid, Ordering::SeqCst)
   }
 
   pub fn swizzle(&mut self, address: u64) -> i64 {
-    self.0.swap(address as i64, Ordering::SeqCst)
+    self.handle().swap(address as i64, Ordering::SeqCst)
   }
 
-  pub fn new(pid: i64) -> Self {
-    Self(AtomicI64::from(pid))
+  pub fn new(size: usize, pid: i64) -> Self {
+    Self(pid, size, AtomicI64::from(pid))
   }
 }
+
+pub enum PageHandleState {
+  UnInit,
+  Fizzled(i64),
+  Swizzled(i64)
+}
+
+impl PageHandleState {
+  pub fn new(handle: &PageHandle) -> Self {
+    let value = handle.value();
+
+    if value < 0 {
+      PageHandleState::Fizzled(value)
+    } else if value > 0 {
+      PageHandleState::Swizzled(value)
+    } else {
+      PageHandleState::UnInit
+    }
+  }
+}
+

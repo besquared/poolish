@@ -1,16 +1,16 @@
 use anyhow::Result;
 use std::io::Read;
-use crate::{PageFrame, Page};
+use crate::{Frame, Page};
 
 #[derive(Debug)]
-pub struct ExclusivePageGuard<'a>(&'a mut Page<'a>);
+pub struct ExclusivePageGuard<'a>(&'a mut Page);
 
 impl<'a> ExclusivePageGuard<'a> {
-  pub fn new(latch: &'a mut Page<'a>) -> Self {
+  pub fn new(latch: &'a mut Page) -> Self {
     Self(latch)
   }
 
-  pub fn frame(&self) -> &PageFrame {
+  pub fn frame(&self) -> &Frame {
     self.0.frame()
   }
 

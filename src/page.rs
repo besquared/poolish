@@ -6,7 +6,13 @@ use anyhow::{ Result };
 use core::hint::spin_loop;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{ PageFrame };
+use crate::{Frame};
+
+//
+// RwPage
+// RsPage
+// RoPage
+//
 
 pub use shared_page_guard::*;
 pub use exclusive_page_guard::*;
@@ -22,33 +28,34 @@ pub use optimistic_page_guard::*;
 // A versioned latch with a 48 bit version and a 16 bit state
 //
 
-#[derive(Debug)]
-pub struct Page<'a>(i64, PageFrame, &'a AtomicU64);
-
 pub const STATE_BITS: u64 = 16u64;
 pub const STATE_MASK: u64 = 0x0000_0000_0000_FFFF;
 
-impl<'a> Page<'a> {
+#[derive(Debug)]
+pub struct Page(i64, Frame, AtomicU64);
+
+impl Page {
   pub fn pid(&self) -> i64 {
     self.0
   }
 
-  pub fn frame(&self) -> &PageFrame {
+  pub fn frame(&self) -> &Frame {
     &self.1
   }
 
-  pub fn frame_mut(&mut self) -> &mut PageFrame {
+  pub fn frame_mut(&mut self) -> &mut Frame {
     &mut self.1
   }
+
   pub fn latch(&self) -> &AtomicU64 {
-    self.2
+    &self.2
   }
 
   pub fn latch_value(&self) -> u64 {
     self.latch().load(Ordering::Acquire)
   }
 
-  pub fn acquire_exclusive(&'a mut self) -> Result<ExclusivePageGuard> {
+  pub fn acquire_exclusive(&mut self) -> Result<ExclusivePageGuard> {
     loop {
       let mut value = self.latch_value();
       let mut state = Self::state(value);
@@ -85,7 +92,7 @@ impl<'a> Page<'a> {
 
   // Constructors
 
-  pub fn new(pid: i64, mut frame: PageFrame) -> Self {
+  pub fn new(pid: i64, mut frame: Frame) -> Self {
     let value = unsafe {
       let pointer = frame.latch_ref();
       Self::make_atomic_u64(std::mem::transmute(pointer))
@@ -117,10 +124,9 @@ impl<'a> Page<'a> {
   }
 
   // Helper methods
-
-  fn make_atomic_u64(src: &mut u64) -> &AtomicU64 {
+  fn make_atomic_u64(src: &mut u64) -> AtomicU64 {
     unsafe {
-      &*(src as *mut u64 as *const AtomicU64)
+      (src as *mut u64 as *const AtomicU64).read_unaligned()
     }
   }
 
