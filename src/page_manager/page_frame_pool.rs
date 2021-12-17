@@ -11,16 +11,16 @@ use std::{
   sync::{ Arc }
 };
 
-use crate::{BufferFrame, BufferPage, PageHandle, PageLatch};
+use crate::{ PageFrame, PageHandle, Page };
 
 #[derive(Debug)]
-pub struct BufferPool {
+pub struct PageFramePool {
   class: u8,
   data: Arc<MmapMut>,
-  frames: Arc<Mutex<VecDeque<BufferFrame>>>
+  frames: Arc<Mutex<VecDeque<PageFrame>>>
 }
 
-impl BufferPool {
+impl PageFramePool {
   pub fn class(&self) -> u8 {
     self.class
   }
@@ -29,7 +29,7 @@ impl BufferPool {
     usize::pow(2usize, u32::from(self.class()))
   }
 
-  pub fn try_alloc<'a>(&mut self, handle: &mut PageHandle) -> Result<PageLatch<'a>> {
+  pub fn try_alloc<'a>(&mut self, handle: &mut PageHandle) -> Result<Page<'a>> {
     let mut frames = self.frames.lock();
 
     let class = self.class();
@@ -38,7 +38,7 @@ impl BufferPool {
         let pid = handle.value();
         frame.activate(pid, class, 1u8, 0u64)?;
         handle.swizzle(frame.as_ref().as_ptr() as u64);
-        let page = PageLatch::new(frame.clone());
+        let page = Page::new(pid, frame.clone());
 
         frames.push_back(frame);
 
@@ -53,11 +53,15 @@ impl BufferPool {
     let page_size = usize::pow(2usize, u32::from(class));
 
     if page_size > usize::pow(2usize, 31u32) {
-      return Err(anyhow!("Buffer pool page size cannot be greater than 2gb"))
+      return Err(anyhow!("Page size cannot be greater than 2gb"))
+    }
+
+    if size_in_bytes < usize::pow(2, 31) {
+      return Err(anyhow!("Page pool size must be a minimum of 2gb"))
     }
 
     if size_in_bytes % page_size != 0 {
-      return Err(anyhow!("Buffer pool size is not evenly divisible by page size, {}, {}", size_in_bytes, page_size))
+      return Err(anyhow!("Page pool size is not evenly divisible by page size, {}, {}", size_in_bytes, page_size))
     }
 
     // Allocate virtual memory
@@ -66,7 +70,7 @@ impl BufferPool {
     let mut frames = VecDeque::new();
     for offset in (0..size_in_bytes).step_by(page_size) {
       let ptr = data.get(offset).unwrap() as *const u8;
-      frames.push_back(BufferFrame::new(ptr, page_size));
+      frames.push_back(PageFrame::new(ptr, page_size));
     }
 
     let data = Arc::new(data);

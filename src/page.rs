@@ -1,38 +1,56 @@
+mod shared_page_guard;
+mod exclusive_page_guard;
+mod optimistic_page_guard;
+
 use anyhow::{ Result };
 use core::hint::spin_loop;
 use std::sync::atomic::{AtomicU64, Ordering};
-use crate::{BufferFrame, ExclusivePageGuard};
+
+use crate::{ PageFrame };
+
+pub use shared_page_guard::*;
+pub use exclusive_page_guard::*;
+pub use optimistic_page_guard::*;
 
 //
+// A page is the entry point for reading and writing to virtual memory
+//
+// It consists of three parts
+//
+// A logical page identifier
+// A page frame with the loc/len of the page allocation
 // A versioned latch with a 48 bit version and a 16 bit state
 //
 
 #[derive(Debug)]
-pub struct PageLatch<'a>(BufferFrame, &'a AtomicU64);
+pub struct Page<'a>(i64, PageFrame, &'a AtomicU64);
 
-pub const STATE_BITS: u64 = 12u64;
-pub const STATE_MASK: u64 = 0x0000_0000_0000_0FFF;
+pub const STATE_BITS: u64 = 16u64;
+pub const STATE_MASK: u64 = 0x0000_0000_0000_FFFF;
 
-impl<'a> PageLatch<'a> {
-  pub fn frame(&self) -> &BufferFrame {
-    &self.0
+impl<'a> Page<'a> {
+  pub fn pid(&self) -> i64 {
+    self.0
   }
 
-  pub fn frame_mut(&mut self) -> &mut BufferFrame {
-    &mut self.0
+  pub fn frame(&self) -> &PageFrame {
+    &self.1
   }
 
-  pub fn value(&self) -> &AtomicU64 {
-    self.1
+  pub fn frame_mut(&mut self) -> &mut PageFrame {
+    &mut self.1
+  }
+  pub fn latch(&self) -> &AtomicU64 {
+    self.2
   }
 
-  pub fn load(&self) -> u64 {
-    self.value().load(Ordering::Acquire)
+  pub fn latch_value(&self) -> u64 {
+    self.latch().load(Ordering::Acquire)
   }
 
   pub fn acquire_exclusive(&'a mut self) -> Result<ExclusivePageGuard> {
     loop {
-      let mut value = self.load();
+      let mut value = self.latch_value();
       let mut state = Self::state(value);
 
       if Self::is_open(state) {
@@ -44,7 +62,7 @@ impl<'a> PageLatch<'a> {
 
       while !Self::is_open(state) {
         spin_loop();
-        value = self.load();
+        value = self.latch_value();
         state = Self::state(value);
       }
     }
@@ -67,13 +85,13 @@ impl<'a> PageLatch<'a> {
 
   // Constructors
 
-  pub fn new(mut frame: BufferFrame) -> Self {
+  pub fn new(pid: i64, mut frame: PageFrame) -> Self {
     let value = unsafe {
       let pointer = frame.latch_ref();
       Self::make_atomic_u64(std::mem::transmute(pointer))
     };
 
-    Self(frame, value)
+    Self(pid, frame, value)
   }
 
   // Self methods
@@ -84,14 +102,6 @@ impl<'a> PageLatch<'a> {
 
   pub fn version(value: u64) -> u64 {
     value >> STATE_BITS
-  }
-
-  pub fn with_state(value: u64, state: u64) -> u64 {
-    (value & !STATE_MASK) | (state & STATE_MASK)
-  }
-
-  pub fn with_version(value: u64, version: u64) -> u64 {
-    (value & STATE_MASK) | (version << STATE_BITS)
   }
 
   pub fn is_open(state: u64) -> bool {
@@ -114,8 +124,16 @@ impl<'a> PageLatch<'a> {
     }
   }
 
+  fn with_state(value: u64, state: u64) -> u64 {
+    (value & !STATE_MASK) | (state & STATE_MASK)
+  }
+
+  fn _with_version(value: u64, version: u64) -> u64 {
+    (value & STATE_MASK) | (version << STATE_BITS)
+  }
+
   fn set_state(&self, value: u64, state: u8) -> Result<u64, u64> {
     let new_value = Self::with_state(value, u64::from(state));
-    self.value().compare_exchange(value, new_value, Ordering::SeqCst, Ordering::Acquire)
+    self.latch().compare_exchange(value, new_value, Ordering::SeqCst, Ordering::Acquire)
   }
 }

@@ -1,13 +1,13 @@
 use anyhow::Result;
 use std::io::Write;
 
-use crate::{ PageLatch };
+use crate::{Page};
 
 #[derive(Debug)]
-pub struct OptimisticPageGuard<'a>(&'a PageLatch<'a>, u64);
+pub struct OptimisticPageGuard<'a>(&'a Page<'a>, u64);
 
 impl<'a> OptimisticPageGuard<'a> {
-  pub fn latch(&self) -> &PageLatch {
+  pub fn latch(&self) -> &Page {
     &self.0
   }
 
@@ -24,22 +24,22 @@ impl<'a> OptimisticPageGuard<'a> {
   // Returns None if a read couldn't be performed due to a version mismatch
   //  Otherwise returns Some(usize) which is the number of bytes written/read
   pub fn try_read<W: AsRef<[u8]> + Write>(&'a mut self, offset: usize, len: usize, dest: &mut W) -> Result<Option<usize>> {
-    let mut value = self.latch().load();
-    let mut state = PageLatch::state(value);
-    let mut version = PageLatch::version(value);
+    let mut value = self.latch().latch_value();
+    let mut state = Page::state(value);
+    let mut version = Page::version(value);
 
     if version != self.version() {
       return Ok(None)
     }
 
     loop {
-      if PageLatch::is_exclusive(state) {
+      if Page::is_exclusive(state) {
         // Wait on access to this page
-        while PageLatch::is_exclusive(state) {
+        while Page::is_exclusive(state) {
           core::hint::spin_loop();
-          value = self.latch().load();
-          state = PageLatch::state(value);
-          version = PageLatch::version(value);
+          value = self.latch().latch_value();
+          state = Page::state(value);
+          version = Page::version(value);
         }
       }  else {
         // Read into dest buffer

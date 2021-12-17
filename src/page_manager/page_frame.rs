@@ -4,7 +4,7 @@
 //
 
 use anyhow::Result;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{ Cursor, Read, Write };
 
 /**
  *
@@ -29,15 +29,15 @@ const LATCH_LEN: usize = 8;
 const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
 
 #[derive(Clone, Debug)]
-pub struct BufferFrame(*const u8, usize);
+pub struct PageFrame(*const u8, usize);
 
 // Allow passing frames between threads
 //  This works because all interaction with a
 //  frame is done via a latch in the buffer page
-unsafe impl Send for BufferFrame {}
-unsafe impl Sync for BufferFrame {}
+unsafe impl Send for PageFrame {}
+unsafe impl Sync for PageFrame {}
 
-impl AsRef<[u8]> for BufferFrame {
+impl AsRef<[u8]> for PageFrame {
   fn as_ref(&self) -> &[u8] {
     unsafe {
       std::slice::from_raw_parts(self.as_ptr(), self.len())
@@ -45,7 +45,7 @@ impl AsRef<[u8]> for BufferFrame {
   }
 }
 
-impl AsMut<[u8]> for BufferFrame {
+impl AsMut<[u8]> for PageFrame {
   fn as_mut(&mut self) -> &mut [u8] {
     unsafe {
       std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())
@@ -53,7 +53,7 @@ impl AsMut<[u8]> for BufferFrame {
   }
 }
 
-impl BufferFrame {
+impl PageFrame {
   pub fn len(&self) -> usize {
     self.1
   }
@@ -118,7 +118,7 @@ impl BufferFrame {
   }
 }
 
-impl std::fmt::Binary for BufferFrame {
+impl std::fmt::Binary for PageFrame {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let bytes = self.as_ref();
     for offset in 0..self.len() {

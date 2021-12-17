@@ -1,4 +1,6 @@
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{
+  AtomicI64, Ordering
+};
 
 //
 // A handle to a logical page that may reside either in-memory or on-disk
