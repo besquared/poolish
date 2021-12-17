@@ -11,7 +11,7 @@ use std::{
   sync::{ Arc }
 };
 
-use crate::{BufferFrame, BufferPage, PageHandle};
+use crate::{BufferFrame, BufferPage, PageHandle, PageLatch};
 
 #[derive(Debug)]
 pub struct BufferPool {
@@ -29,20 +29,21 @@ impl BufferPool {
     usize::pow(2usize, u32::from(self.class()))
   }
 
-  pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<BufferPage> {
-    let mut frames = match self.frames.try_lock() {
-      Some(frames) => frames,
-      None => return Err(anyhow!("Cannot acquire buffer pool lock {:?}", self.class))
-    };
+  pub fn try_alloc<'a>(&mut self, handle: &mut PageHandle) -> Result<PageLatch<'a>> {
+    let mut frames = self.frames.lock();
 
     let class = self.class();
     if let Some(mut frame) = frames.pop_front() {
       if !frame.is_active() {
+        let pid = handle.value();
+        frame.try_alloc(pid, class, 1u8, 0u64)?;
+        handle.swizzle(frame.as_ref().as_ptr() as u64);
+        let page = BufferPage::try_load(pid, frame.clone())?;
+
         frame.activate();
-        let page = BufferPage::try_alloc(class, handle, frame.clone())?;
         frames.push_back(frame);
 
-        return Ok(page);
+        return Ok(PageLatch::new(page));
       }
     }
 

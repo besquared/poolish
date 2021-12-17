@@ -25,8 +25,8 @@ fn main() -> Result<()> {
 
       let mut handle = manager.new_handle();
       println!("[t1] page handle {:?}", handle);
-      let buffer_page = manager.try_alloc(&mut handle, 12).unwrap();
-      println!("[t2] buffer page {:?}", buffer_page);
+      let page_latch = manager.try_alloc(&mut handle, 12).unwrap();
+      println!("[t2] page_latch {:?}", page_latch);
     }
   })?;
 
@@ -38,8 +38,8 @@ fn main() -> Result<()> {
       let mut handle = manager.new_handle();
 
       println!("[t2] page handle {:?}", handle);
-      let buffer_page = manager.try_alloc(&mut handle, 12).unwrap();
-      println!("[t2] buffer page {:?}", buffer_page);
+      let page_latch = manager.try_alloc(&mut handle, 12).unwrap();
+      println!("[t2] page_latch {:?}", page_latch);
     }
   })?;
 

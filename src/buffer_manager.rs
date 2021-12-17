@@ -28,7 +28,7 @@ impl BufferManager {
     PageHandle::new(self.counter.fetch_sub(1, Ordering::SeqCst))
   }
 
-  pub fn try_alloc(&mut self, handle: &mut PageHandle, _size: usize) -> Result<BufferPage> {
+  pub fn try_alloc<'a>(&mut self, handle: &mut PageHandle, _size: usize) -> Result<PageLatch<'a>> {
     if handle.is_fizzled() {
       self.buffers[0].try_alloc(handle)
     } else {
