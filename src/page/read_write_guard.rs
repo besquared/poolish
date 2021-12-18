@@ -3,9 +3,9 @@ use std::io::Read;
 use crate::{Frame, Page};
 
 #[derive(Debug)]
-pub struct ExclusivePageGuard<'a>(&'a mut Page);
+pub struct ReadWriteGuard<'a>(&'a mut Page);
 
-impl<'a> ExclusivePageGuard<'a> {
+impl<'a> ReadWriteGuard<'a> {
   pub fn new(latch: &'a mut Page) -> Self {
     Self(latch)
   }

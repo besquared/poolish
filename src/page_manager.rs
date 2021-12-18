@@ -5,9 +5,7 @@ use anyhow::{
   anyhow, Result
 };
 
-use std::sync::atomic::{
-  AtomicI64, Ordering
-};
+use std::sync::atomic::{ AtomicU64, Ordering };
 
 use crate::{
   Page,
@@ -28,36 +26,20 @@ pub use frame_pool::*;
 //
 
 #[derive(Debug)]
-pub struct PageManager(AtomicI64, [FramePool; 20]);
+pub struct PageManager(AtomicU64, [FramePool; 20]);
 
 impl PageManager {
-  fn pid(&self) -> &AtomicI64 {
-    &self.0
+  pub fn new_handle(&mut self, class: u8) -> PageHandle {
+    PageHandle::new(class, self.pids().fetch_add(1, Ordering::SeqCst))
   }
 
-  fn pools(&self) -> &[FramePool; 20] {
-    &self.1
-  }
-
-  fn pools_mut(&mut self) -> &mut [FramePool; 20] {
-    &mut self.1
-  }
-
-  pub fn new_handle(&mut self, size: usize) -> PageHandle {
-    PageHandle::new(size, self.pid().fetch_sub(1, Ordering::SeqCst))
+  pub fn try_fetch(&self, handle: &mut PageHandle) -> Result<Page> {
+    self.pool(handle.class())?.try_fetch(handle)
   }
 
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<Page> {
-    let idx = handle.class() - 12;
-    let pool = match self.pools_mut().get_mut(idx) {
-      Some(pool) => pool,
-      None => return Err(anyhow!("Page size class not found {}", handle.class()))
-    };
-
-    pool.try_alloc(handle)
+    self.pool_mut(handle.class())?.try_alloc(handle)
   }
-
-  // what do we do if we want to bring a page back in?
 
   pub fn try_new(pool_size: usize) -> Result<Self> {
     let pools: [FramePool; 20] = [
@@ -84,6 +66,39 @@ impl PageManager {
     ];
 
     // PID sequence
-    Ok(Self(AtomicI64::new(-1), pools))
+    Ok(Self(AtomicU64::new(1), pools))
+  }
+
+  // Helper Functions
+  fn pids(&self) -> &AtomicU64 {
+    &self.0
+  }
+
+  fn pools(&self) -> &[FramePool; 20] {
+    &self.1
+  }
+
+  fn pools_mut(&mut self) -> &mut [FramePool; 20] {
+    &mut self.1
+  }
+
+  fn pool_idx(&self, class: u8) -> u8 {
+    class - 12u8
+  }
+
+  fn pool(&self, class: u8) -> Result<&FramePool> {
+    let idx = self.pool_idx(class);
+    match self.pools().get(idx as usize) {
+      Some(pool) => Ok(pool),
+      None => Err(anyhow!("Page size class not found {}", class))
+    }
+  }
+
+  fn pool_mut(&mut self, class: u8) -> Result<&mut FramePool> {
+    let idx = self.pool_idx(class);
+    match self.pools_mut().get_mut(idx as usize) {
+      Some(pool) => Ok(pool),
+      None => Err(anyhow!("Page size class not found {}", class))
+    }
   }
 }

@@ -25,7 +25,7 @@ fn make_page_manager() -> Result<Arc<Mutex<PageManager>>> {
 }
 
 #[test]
-fn allocates_pages_in_operators() -> Result<()> {
+fn allocates_pages_in_ops() -> Result<()> {
   let pages = make_page_manager()?;
   let config = timely::Config::process(2);
 
@@ -48,7 +48,7 @@ fn allocates_pages_in_operators() -> Result<()> {
             // Allocate Handle + Page
             println!("[{}] page = {:?}", index, &page);
 
-            let _ = page.acquire_exclusive().unwrap();
+            let _ = page.try_read_write().unwrap();
           }
         })
         .probe_with(&mut probe);

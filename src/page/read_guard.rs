@@ -2,9 +2,9 @@ use anyhow::{ Result };
 use crate::{Page};
 
 #[derive(Debug)]
-pub struct SharedPageGuard<'a>(&'a Page);
+pub struct ReadGuard<'a>(&'a Page);
 
-impl<'a> SharedPageGuard<'a> {
+impl<'a> ReadGuard<'a> {
   pub fn try_new(_: &'a Page) -> Result<Self> {
     todo!()
 

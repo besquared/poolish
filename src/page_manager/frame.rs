@@ -58,9 +58,9 @@ impl Frame {
     self.1
   }
 
-  pub fn pid(&self) -> i64 {
+  pub fn pid(&self) -> u64 {
     let b = self.as_ref();
-    i64::from_le_bytes([ b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] ])
+    u64::from_le_bytes([ b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] ])
   }
 
   pub fn pid_ref(&mut self) -> &mut u8 {
@@ -97,7 +97,7 @@ impl Frame {
     Self(ptr, len)
   }
 
-  pub fn activate(&mut self, pid: i64, class: u8, dirty: u8, latch: u64) -> Result<()> {
+  pub fn activate(&mut self, pid: u64, class: u8, dirty: u8, latch: u64) -> Result<()> {
     let mut cursor = Cursor::new(self.as_mut());
 
     cursor.write(&pid.to_le_bytes())?;

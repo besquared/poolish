@@ -43,8 +43,8 @@ impl FramePool {
         let mut frames = self.frames.lock();
         if let Some(mut frame) = frames.pop_front() {
           if frame.pid() == 0 {
+            handle.swizzle(&frame);
             frame.activate(pid, class, 1u8, 0u64)?;
-            handle.swizzle(frame.as_ref().as_ptr() as u64);
             let page = Page::new(pid, frame.clone());
 
             frames.push_back(frame);
@@ -55,30 +55,26 @@ impl FramePool {
 
         Err(anyhow!("No free frames found in buffer pool"))
       }
-      PageHandleState::Swizzled(_) => {
+      PageHandleState::Swizzled(_ptr) => {
         return Err(anyhow!("Cannot allocate an swizzled page handle"))
-      }
-      PageHandleState::UnInit => {
-        return Err(anyhow!("Cannot allocate an uninitialized page handle"))
       }
     }
   }
 
-  pub fn try_fetch(&mut self, handle: &mut PageHandle) -> Result<Page> {
+  pub fn try_fetch(&self, handle: &mut PageHandle) -> Result<Page> {
     match handle.state() {
       PageHandleState::Fizzled(_pid) => {
         todo!()
         // This page is cold, check the fridge, and then the disk manager
       }
-      PageHandleState::Swizzled(ptr) => {
-        let ptr: *const u8 = unsafe {
-          std::mem::transmute(ptr)
+      PageHandleState::Swizzled(address) => {
+        let address: *const u8 = unsafe {
+          std::mem::transmute(address)
         };
 
         // This is already hot, new up a page with this
-        Ok(Page::new(handle.pid(), Frame::new(ptr, self.size())))
+        Ok(Page::new(handle.pid(), Frame::new(address, self.size())))
       }
-      PageHandleState::UnInit => return Err(anyhow!("Cannot find page with an un-initialized page handle")),
     }
   }
 

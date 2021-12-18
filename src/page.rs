@@ -1,6 +1,6 @@
-mod shared_page_guard;
-mod exclusive_page_guard;
-mod optimistic_page_guard;
+mod read_guard;
+mod read_write_guard;
+mod read_opt_guard;
 
 use anyhow::{ Result };
 use core::hint::spin_loop;
@@ -14,9 +14,9 @@ use crate::{Frame};
 // RoPage
 //
 
-pub use shared_page_guard::*;
-pub use exclusive_page_guard::*;
-pub use optimistic_page_guard::*;
+pub use read_guard::*;
+pub use read_write_guard::*;
+pub use read_opt_guard::*;
 
 //
 // A page is the entry point for reading and writing to virtual memory
@@ -24,38 +24,46 @@ pub use optimistic_page_guard::*;
 // It consists of three parts
 //
 // A logical page identifier
-// A page frame with the loc/len of the page allocation
 // A versioned latch with a 48 bit version and a 16 bit state
+// A page frame with the pointer and length of the memory allocation
 //
 
 pub const STATE_BITS: u64 = 16u64;
 pub const STATE_MASK: u64 = 0x0000_0000_0000_FFFF;
 
 #[derive(Debug)]
-pub struct Page(i64, Frame, AtomicU64);
+pub struct Page(u64, AtomicU64, Frame);
 
 impl Page {
-  pub fn pid(&self) -> i64 {
+  pub fn pid(&self) -> u64 {
     self.0
   }
 
-  pub fn frame(&self) -> &Frame {
-    &self.1
-  }
-
-  pub fn frame_mut(&mut self) -> &mut Frame {
-    &mut self.1
-  }
-
   pub fn latch(&self) -> &AtomicU64 {
-    &self.2
+    &self.1
   }
 
   pub fn latch_value(&self) -> u64 {
     self.latch().load(Ordering::Acquire)
   }
 
-  pub fn acquire_exclusive(&mut self) -> Result<ExclusivePageGuard> {
+  pub fn frame(&self) -> &Frame {
+    &self.2
+  }
+
+  pub fn frame_mut(&mut self) -> &mut Frame {
+    &mut self.2
+  }
+
+  //
+  // Three kinds of accessors
+  //
+  // try_read
+  // try_read_opt
+  // try_read_write
+  //
+
+  pub fn try_read_write(&mut self) -> Result<ReadWriteGuard> {
     loop {
       let mut value = self.latch_value();
       let mut state = Self::state(value);
@@ -63,7 +71,7 @@ impl Page {
       if Self::is_open(state) {
         match self.set_state(value, 1u8) {
           Err(_) => continue,
-          Ok(_) => return Ok(ExclusivePageGuard::new(self))
+          Ok(_) => return Ok(ReadWriteGuard::new(self))
         }
       }
 
@@ -92,13 +100,13 @@ impl Page {
 
   // Constructors
 
-  pub fn new(pid: i64, mut frame: Frame) -> Self {
-    let value = unsafe {
-      let pointer = frame.latch_ref();
-      Self::make_atomic_u64(std::mem::transmute(pointer))
+  pub fn new(pid: u64, mut frame: Frame) -> Self {
+    let latch = unsafe {
+      let latch_ref = frame.latch_ref();
+      Self::make_latch(std::mem::transmute(latch_ref))
     };
 
-    Self(pid, frame, value)
+    Self(pid, latch, frame)
   }
 
   // Self methods
@@ -124,7 +132,7 @@ impl Page {
   }
 
   // Helper methods
-  fn make_atomic_u64(src: &mut u64) -> AtomicU64 {
+  fn make_latch(src: &mut u64) -> AtomicU64 {
     unsafe {
       (src as *mut u64 as *const AtomicU64).read_unaligned()
     }

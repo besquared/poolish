@@ -4,9 +4,9 @@ use std::io::Write;
 use crate::{Page};
 
 #[derive(Debug)]
-pub struct OptimisticPageGuard<'a>(&'a Page, u64);
+pub struct ReadOptGuard<'a>(&'a Page, u64);
 
-impl<'a> OptimisticPageGuard<'a> {
+impl<'a> ReadOptGuard<'a> {
   pub fn latch(&self) -> &Page {
     &self.0
   }
