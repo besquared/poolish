@@ -45,7 +45,7 @@ impl FramePool {
           if frame.pid() == 0 {
             handle.swizzle(&frame);
             frame.activate(pid, class, 1u8, 0u64)?;
-            let page = Page::new(pid, frame.clone());
+            let page = Page::try_new(pid, frame.clone())?;
 
             frames.push_back(frame);
 
@@ -73,7 +73,7 @@ impl FramePool {
         };
 
         // This is already hot, new up a page with this
-        Ok(Page::new(handle.pid(), Frame::new(address, self.size())))
+        Ok(Page::try_new(handle.pid(), Frame::new(address, self.size()))?)
       }
     }
   }
@@ -98,7 +98,11 @@ impl FramePool {
 
     let mut frames = VecDeque::new();
     for offset in (0..size_in_bytes).step_by(frame_size) {
-      let ptr = data.get(offset).unwrap() as *const u8;
+      let ptr = match data.get(offset) {
+        Some(byte_ref) => byte_ref as *const u8,
+        None => return Err(anyhow!("PoolAllocationError: Cannot get reference to byte at offset {}", offset))
+      };
+
       frames.push_back(Frame::new(ptr, frame_size));
     }
 

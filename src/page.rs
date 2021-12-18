@@ -100,13 +100,13 @@ impl Page {
 
   // Constructors
 
-  pub fn new(pid: u64, mut frame: Frame) -> Self {
+  pub fn try_new(pid: u64, mut frame: Frame) -> Result<Self> {
     let latch = unsafe {
-      let latch_ref = frame.latch_ref();
+      let latch_ref = frame.latch_ref()?;
       Self::make_latch(std::mem::transmute(latch_ref))
     };
 
-    Self(pid, latch, frame)
+    Ok(Self(pid, latch, frame))
   }
 
   // Self methods

@@ -3,7 +3,7 @@
 //  consider implementing the latch here instead of in the page
 //
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::io::{ Cursor, Read, Write };
 
 /**
@@ -22,11 +22,11 @@ use std::io::{ Cursor, Read, Write };
  *
  */
 
-const PID_LEN: usize = 8;
-const CLASS_LEN: usize = 1;
-const DIRTY_LEN: usize = 1;
-const LATCH_LEN: usize = 8;
-const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
+const PID_LEN: u8 = 8;
+const CLASS_LEN: u8 = 1;
+const DIRTY_LEN: u8 = 1;
+const LATCH_LEN: u8 = 8;
+pub const FRAME_HEADER_LEN: u8 = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
 
 #[derive(Clone, Debug)]
 pub struct Frame(*const u8, usize);
@@ -63,33 +63,33 @@ impl Frame {
     u64::from_le_bytes([ b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7] ])
   }
 
-  pub fn pid_ref(&mut self) -> &mut u8 {
-    self.as_mut().get_mut(0).unwrap()
+  pub fn pid_ref(&mut self) -> Result<&mut u8> {
+    self.byte_ref(0)
   }
 
-  pub fn class_ref(&mut self) -> &mut u8 {
-    self.as_mut().get_mut(8).unwrap()
+  pub fn class_ref(&mut self) -> Result<&mut u8> {
+    self.byte_ref(8)
   }
 
-  pub fn dirty_ref(&mut self) -> &mut u8 {
-    self.as_mut().get_mut(9).unwrap()
+  pub fn dirty_ref(&mut self) -> Result<&mut u8> {
+    self.byte_ref(9)
   }
 
-  pub fn latch_ref(&mut self) -> &mut u8 {
-    self.as_mut().get_mut(10).unwrap()
+  pub fn latch_ref(&mut self) -> Result<&mut u8> {
+    self.byte_ref(10)
   }
 
   // todo: if dest is longer than the frame then only write up to the end of the frame
   pub fn read<W: Write>(&self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
     let bytes = self.as_ref();
-    let offset = HEADER_LEN + offset;
+    let offset = usize::from(FRAME_HEADER_LEN) + offset;
     Ok(dest.write(&bytes[offset..offset + len])?)
   }
 
   // todo: if src is longer than the frame then only read up to the end of the frame
   pub fn write<R: Read>(&mut self, offset: usize, len: usize, src: &mut R) -> Result<usize> {
     let bytes = self.as_mut();
-    let offset = HEADER_LEN + offset;
+    let offset = usize::from(FRAME_HEADER_LEN) + offset;
     Ok(src.read(&mut bytes[offset .. offset + len])?)
   }
 
@@ -108,7 +108,7 @@ impl Frame {
     Ok(())
   }
 
-  // Internal
+  // Private Helper Functions
 
   fn as_ptr(&self) -> *const u8 {
     self.0
@@ -116,6 +116,14 @@ impl Frame {
 
   fn as_mut_ptr(&self) -> *mut u8 {
     self.0 as *mut u8
+  }
+
+  fn byte_ref(&mut self, idx: usize) -> Result<&mut u8> {
+    let frame_addr = self.as_ptr();
+    match self.as_mut().get_mut(idx) {
+      Some(byte_ref) => Ok(byte_ref),
+      None => Err(anyhow!("Cannot find reference to pid at frame {:?}", frame_addr))
+    }
   }
 }
 

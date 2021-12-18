@@ -6,8 +6,8 @@ use crate::{Frame, Page};
 pub struct ReadWriteGuard<'a>(&'a mut Page);
 
 impl<'a> ReadWriteGuard<'a> {
-  pub fn new(latch: &'a mut Page) -> Self {
-    Self(latch)
+  pub fn new(page: &'a mut Page) -> Self {
+    Self(page)
   }
 
   pub fn frame(&self) -> &Frame {
