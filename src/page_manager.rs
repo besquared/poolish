@@ -45,6 +45,8 @@ impl PageManager {
     }
   }
 
+  // Make this consume a page handle that is un-initialized
+  //  Set the handle pid with a sequence number and return page
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<Page> {
     let cid = handle.cid();
     let state = handle.state();
@@ -71,6 +73,12 @@ impl PageManager {
     Ok(())
   }
 
+  //
+  // This shouldn't assign a pid:
+  //
+  //  let mut handle = PageHandle::try_new(bytes_to_fit)
+  //  let page = pages.try_alloc(&mut handle)?
+  //
   pub fn try_new_handle(&mut self, data_len_in_bytes: u32) -> Result<PageHandle> {
     let pid = self.pids().fetch_add(1, Ordering::SeqCst);
     let class = PageClass::try_new_to_fit(data_len_in_bytes)?;

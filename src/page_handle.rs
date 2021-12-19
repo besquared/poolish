@@ -17,6 +17,18 @@ use crate::{ Frame, PageClass };
  *
  */
 
+//
+// todo: We should make this work with tagged pointers instead
+//  on 64 bit systems the least significant (right-most) 3 bits aren't used
+//  when a pointer is de-referenced those bytes must be 0 but at rest they can
+//  store some type information.
+//
+// For our system we'll use the least significant bit set to 1 to indicate that
+//  the value is a pid and not a pointer. This means that pids are only ever odd
+//  numbers. If a value is odd it's a pid (value & 1 == 1) otherwise we know that
+//  it's a pointer and can be safely de-referenced.
+//
+
 #[derive(Debug)]
 pub struct PageHandle(u64, PageClass, AtomicUsize);
 
