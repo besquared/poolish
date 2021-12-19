@@ -1,5 +1,8 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::Frame;
+use std::sync::atomic::{
+  AtomicUsize, Ordering
+};
+
+use crate::{ Frame, PageClass };
 
 /**
  *
@@ -15,15 +18,19 @@ use crate::Frame;
  */
 
 #[derive(Debug)]
-pub struct PageHandle(u8, u64, AtomicUsize);
+pub struct PageHandle(u64, PageClass, AtomicUsize);
 
 impl PageHandle {
   pub fn pid(&self) -> u64 {
-    self.1
+    self.0
   }
 
-  pub fn class(&self) -> u8 {
-    self.0
+  pub fn cid(&self) -> u8 {
+    self.class().id()
+  }
+
+  pub fn class(&self) -> &PageClass {
+    &self.1
   }
 
   pub fn handle(&self) -> &AtomicUsize {
@@ -35,7 +42,7 @@ impl PageHandle {
   }
 
   pub fn state(&self) -> PageHandleState {
-    PageHandleState::new(&self)
+    PageHandleState::new(self.pid(), self.value())
   }
 
   pub fn fizzle(&mut self) -> usize {
@@ -43,14 +50,14 @@ impl PageHandle {
   }
 
   pub fn swizzle(&mut self, frame: &Frame) -> usize {
-    let address = frame.as_ref().as_ptr();
-    self.handle().swap(address as usize, Ordering::SeqCst)
+    let frame_ptr = frame.as_ref().as_ptr();
+    self.handle().swap(frame_ptr as usize, Ordering::SeqCst)
   }
 
   // Constructors
 
-  pub fn new(class: u8, pid: u64) -> Self {
-    Self(class, pid, AtomicUsize::from(0))
+  pub fn new(pid: u64, class: PageClass) -> Self {
+    Self(pid, class, AtomicUsize::from(0))
   }
 }
 
@@ -60,14 +67,11 @@ pub enum PageHandleState {
 }
 
 impl PageHandleState {
-  pub fn new(handle: &PageHandle) -> Self {
-    let pid = handle.pid();
-    let value = handle.value();
-
-    if value == 0 {
+  pub fn new(pid: u64, handle: usize) -> Self {
+    if handle == 0 {
       PageHandleState::Fizzled(pid)
     } else {
-      PageHandleState::Swizzled(value)
+      PageHandleState::Swizzled(handle)
     }
   }
 }

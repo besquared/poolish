@@ -1,114 +1,68 @@
+mod alloc_pool;
+mod allocations;
+
 use anyhow::{
   anyhow, Result
 };
 
-use memmap2::{
-  MmapMut
-};
-
+use memmap2::MmapMut;
 use parking_lot::Mutex;
-
-use std::{
-  collections::VecDeque,
-  sync::{ Arc }
-};
+use std::sync::{ Arc };
 
 use crate::{
-  Frame,
-  Page,
-  PageHandle,
-  PageHandleState
+  MAX_CLASS,
+  Frame, PageClass
 };
 
+use alloc_pool::*;
+use allocations::*;
+
 #[derive(Debug)]
-pub struct FramePool {
-  class: u8,
-  data: Arc<MmapMut>,
-  frames: Arc<Mutex<VecDeque<Frame>>>
-}
+pub struct FramePool(PageClass, Arc<MmapMut>, Arc<Mutex<Allocations>>);
 
 impl FramePool {
-  pub fn class(&self) -> u8 {
-    self.class
+  pub fn class(&self) -> &PageClass {
+    &self.0
   }
 
-  pub fn size(&self) -> usize {
-    usize::pow(2usize, u32::from(self.class()))
+  pub fn data(&self) -> &MmapMut {
+    &self.1.as_ref()
   }
 
-  pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<Page> {
-    match handle.state() {
-      PageHandleState::Fizzled(pid) => {
-        let class = self.class();
-        let mut frames = self.frames.lock();
-        if let Some(mut frame) = frames.pop_front() {
-          if frame.pid() == 0 {
-            handle.swizzle(&frame);
-            frame.activate(pid, class, 1u8, 0u64)?;
-            let page = Page::try_new(pid, frame.clone())?;
+  pub fn frames(&self) -> &Mutex<Allocations> {
+    &self.2.as_ref()
+  }
 
-            frames.push_back(frame);
-
-            return Ok(page);
-          }
-        }
-
-        Err(anyhow!("No free frames found in buffer pool"))
-      }
-      PageHandleState::Swizzled(_ptr) => {
-        return Err(anyhow!("Cannot allocate an swizzled page handle"))
-      }
+  pub fn alloc(&mut self) -> Option<Frame> {
+    let mut frames = self.frames().lock();
+    if let Some(frame) = frames.free_mut().pop_front() {
+      frames.used_mut().push_back(frame.clone());
+      Some(frame)
+    } else {
+      None
     }
   }
 
-  pub fn try_fetch(&self, handle: &mut PageHandle) -> Result<Page> {
-    match handle.state() {
-      PageHandleState::Fizzled(_pid) => {
-        todo!()
-        // This page is cold, check the fridge, and then the disk manager
-      }
-      PageHandleState::Swizzled(address) => {
-        let address: *const u8 = unsafe {
-          std::mem::transmute(address)
-        };
+  pub fn try_new(pool_size: usize, class: PageClass) -> Result<Self> {
+    let frame_size = 2usize.pow(class.id() as u32);
+    let max_frame_size = usize::pow(2usize, MAX_CLASS as u32);
 
-        // This is already hot, new up a page with this
-        Ok(Page::try_new(handle.pid(), Frame::new(address, self.size()))?)
-      }
-    }
-  }
-
-  pub fn try_new(size_in_bytes: usize, class: u8) -> Result<Self> {
-    let frame_size = usize::pow(2usize, u32::from(class));
-
-    if frame_size > usize::pow(2usize, 31u32) {
-      return Err(anyhow!("Page size cannot be greater than 2gb"))
+    if frame_size > max_frame_size {
+      return Err(anyhow!("Page size must be less than {} bytes", max_frame_size))
     }
 
-    if size_in_bytes < usize::pow(2, 31) {
-      return Err(anyhow!("Page pool size must be a minimum of 2gb"))
+    if pool_size < max_frame_size {
+      return Err(anyhow!("Page pool size must be greater than {} bytes", max_frame_size))
     }
 
-    if size_in_bytes % frame_size != 0 {
-      return Err(anyhow!("Frame pool must be a multiple of frame size, {}, {}", size_in_bytes, frame_size))
+    if pool_size % frame_size != 0 {
+      return Err(anyhow!("Page pool size must be divisible by page size: {} / {}", pool_size, frame_size))
     }
 
     // Allocate virtual memory
-    let data = MmapMut::map_anon(size_in_bytes)?;
+    let data = Arc::new(MmapMut::map_anon(pool_size)?);
+    let frames = Arc::new(Mutex::new(Allocations::try_new(data.clone(), frame_size)?));
 
-    let mut frames = VecDeque::new();
-    for offset in (0..size_in_bytes).step_by(frame_size) {
-      let ptr = match data.get(offset) {
-        Some(byte_ref) => byte_ref as *const u8,
-        None => return Err(anyhow!("PoolAllocationError: Cannot get reference to byte at offset {}", offset))
-      };
-
-      frames.push_back(Frame::new(ptr, frame_size));
-    }
-
-    let data = Arc::new(data);
-    let frames = Arc::new(Mutex::new(frames));
-
-    Ok(Self { class, data, frames })
+    Ok(Self(class, data, frames))
   }
 }

@@ -1,12 +1,16 @@
+mod page_latch;
 mod read_guard;
-mod read_write_guard;
 mod read_opt_guard;
+mod read_write_guard;
 
 use anyhow::{ Result };
 use core::hint::spin_loop;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::{Frame};
+use std::{
+  io::{ Cursor, Write }
+};
+
+use crate::{ Frame, PageHandle };
 
 //
 // RwPage
@@ -14,9 +18,10 @@ use crate::{Frame};
 // RoPage
 //
 
+pub use page_latch::*;
 pub use read_guard::*;
-pub use read_write_guard::*;
 pub use read_opt_guard::*;
+pub use read_write_guard::*;
 
 //
 // A page is the entry point for reading and writing to virtual memory
@@ -28,31 +33,25 @@ pub use read_opt_guard::*;
 // A page frame with the pointer and length of the memory allocation
 //
 
-pub const STATE_BITS: u64 = 16u64;
-pub const STATE_MASK: u64 = 0x0000_0000_0000_FFFF;
-
 #[derive(Debug)]
-pub struct Page(u64, AtomicU64, Frame);
+pub struct Page(u64, Frame);
 
 impl Page {
   pub fn pid(&self) -> u64 {
     self.0
   }
 
-  pub fn latch(&self) -> &AtomicU64 {
+  pub fn frame(&self) -> &Frame {
     &self.1
   }
 
-  pub fn latch_value(&self) -> u64 {
-    self.latch().load(Ordering::Acquire)
-  }
-
-  pub fn frame(&self) -> &Frame {
-    &self.2
-  }
-
   pub fn frame_mut(&mut self) -> &mut Frame {
-    &mut self.2
+    &mut self.1
+  }
+
+  pub fn latch(&self) -> Result<PageLatch> {
+    let frame = self.frame();
+    Ok(PageLatch::new(frame.latch_ref()?))
   }
 
   //
@@ -64,21 +63,23 @@ impl Page {
   //
 
   pub fn try_read_write(&mut self) -> Result<ReadWriteGuard> {
-    loop {
-      let mut value = self.latch_value();
-      let mut state = Self::state(value);
+    let latch = self.latch()?;
 
-      if Self::is_open(state) {
-        match self.set_state(value, 1u8) {
+    loop {
+      let mut value = latch.value();
+      let mut state = PageLatch::state(value);
+
+      if PageLatch::is_open(state) {
+        match latch.set_state(value, 1u8) {
           Err(_) => continue,
           Ok(_) => return Ok(ReadWriteGuard::new(self))
         }
       }
 
-      while !Self::is_open(state) {
+      while !PageLatch::is_open(state) {
         spin_loop();
-        value = self.latch_value();
-        state = Self::state(value);
+        value = latch.value();
+        state = PageLatch::state(value);
       }
     }
   }
@@ -100,54 +101,18 @@ impl Page {
 
   // Constructors
 
-  pub fn try_new(pid: u64, mut frame: Frame) -> Result<Self> {
-    let latch = unsafe {
-      let latch_ref = frame.latch_ref()?;
-      Self::make_latch(std::mem::transmute(latch_ref))
-    };
+  pub fn try_alloc(cid: u8, pid: u64, mut frame: Frame) -> Result<Self> {
+    let mut cursor = Cursor::new(frame.as_mut());
 
-    Ok(Self(pid, latch, frame))
+    cursor.write(&cid.to_le_bytes())?;
+    cursor.write(&pid.to_le_bytes())?;
+    cursor.write(&1u8.to_le_bytes())?;  // Dirty page
+    cursor.write(&0u64.to_le_bytes())?; // Open latch
+
+    Ok(Self(pid, frame))
   }
 
-  // Self methods
-
-  pub fn state(value: u64) -> u64 {
-    value & STATE_MASK
-  }
-
-  pub fn version(value: u64) -> u64 {
-    value >> STATE_BITS
-  }
-
-  pub fn is_open(state: u64) -> bool {
-    state == 0
-  }
-
-  pub fn is_shared(state: u64) -> bool {
-    state > 1
-  }
-
-  pub fn is_exclusive(state: u64) -> bool {
-    state == 1
-  }
-
-  // Helper methods
-  fn make_latch(src: &mut u64) -> AtomicU64 {
-    unsafe {
-      (src as *mut u64 as *const AtomicU64).read_unaligned()
-    }
-  }
-
-  fn with_state(value: u64, state: u64) -> u64 {
-    (value & !STATE_MASK) | (state & STATE_MASK)
-  }
-
-  fn _with_version(value: u64, version: u64) -> u64 {
-    (value & STATE_MASK) | (version << STATE_BITS)
-  }
-
-  fn set_state(&self, value: u64, state: u8) -> Result<u64, u64> {
-    let new_value = Self::with_state(value, u64::from(state));
-    self.latch().compare_exchange(value, new_value, Ordering::SeqCst, Ordering::Acquire)
+  pub fn try_fetch(handle: &PageHandle, frame: Frame) -> Result<Self> {
+    Ok(Self(handle.pid(), frame))
   }
 }

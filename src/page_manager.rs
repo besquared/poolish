@@ -6,180 +6,114 @@ use anyhow::{
 };
 
 use std::sync::atomic::{
-  AtomicU64, Ordering
+  AtomicU64, AtomicUsize, Ordering
 };
 
 use crate::{
-  Page,
-  PageHandle
+  MAX_CLASS, MIN_CLASS,
+  Page, PageClass, PageHandle, PageHandleState
 };
 
 pub use frame::*;
 pub use frame_pool::*;
 
-//
-// const SIZE_CLASSES: [usize; 20] = [
-//   2^12, 2^13, 2^14, 2^15, //   4k,   8k,  16k,  32k
-//   2^16, 2^17, 2^18, 2^19, //  64k, 128k, 256k, 512k
-//   2^20, 2^21, 2^22, 2^23, //   1m,   2m,   4m,   8m
-//   2^24, 2^25, 2^26, 2^27, //  16m,  32m,  64m, 128m
-//   2^28, 2^29, 2^30, 2^31  // 256m, 512m,   1g,   2g
-// ];
-//
-
-pub type FramePools = [FramePool; 20];
+pub type FramePools = Vec<FramePool>;
 
 #[derive(Debug)]
-pub struct PageManager(AtomicU64, FramePools);
+pub struct PageManager(AtomicUsize, AtomicU64, FramePools);
 
 impl PageManager {
-  pub fn new_handle(&mut self, data_len_in_bytes: u32) -> Result<PageHandle> {
-    let class = class_to_fit(data_len_in_bytes)?;
-    Ok(PageHandle::new(class, self.pids().fetch_add(1, Ordering::SeqCst)))
+  pub fn used_bytes(&self) -> usize {
+    self.0.load(Ordering::Acquire)
   }
 
   pub fn try_fetch(&self, handle: &mut PageHandle) -> Result<Page> {
-    self.pool(handle.class())?.try_fetch(handle)
+    match handle.state() {
+      PageHandleState::Fizzled(_pid) => {
+        todo!()
+        // This page is cold, check the fridge, and then the freezer
+      }
+
+      PageHandleState::Swizzled(frame_ptr) => {
+        let frame_ptr: *const u8 = unsafe {
+          std::mem::transmute(frame_ptr)
+        };
+
+        let frame_len = handle.class().size() as usize;
+
+        // This is already hot, create a fetched page with this
+        Ok(Page::try_fetch(handle, Frame::new(frame_ptr, frame_len))?)
+      }
+    }
   }
 
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<Page> {
-    self.pool_mut(handle.class())?.try_alloc(handle)
+    let cid = handle.cid();
+    let state = handle.state();
+    let class = handle.class();
+
+    match state {
+      PageHandleState::Fizzled(pid) => match self.pool_mut(class)?.alloc() {
+        Some(frame) => {
+          handle.swizzle(&frame);
+          self.alloc(frame.len());
+          Ok(Page::try_alloc(cid, pid, frame)?)
+        }
+        None => Err(anyhow!("No more free space, need to write some memory to disk"))
+      }
+
+      PageHandleState::Swizzled(_ptr) => Err(anyhow!("Cannot alloc an already allocated page"))
+    }
+  }
+
+  pub fn try_release(&mut self, handle: &mut PageHandle) -> Result<()> {
+    self.free(handle.class().size() as usize);
+    Ok(())
+  }
+
+  pub fn try_new_handle(&mut self, data_len_in_bytes: u32) -> Result<PageHandle> {
+    let pid = self.pids().fetch_add(1, Ordering::SeqCst);
+    let class = PageClass::try_new_to_fit(data_len_in_bytes)?;
+
+    Ok(PageHandle::new(pid, class))
   }
 
   pub fn try_new(pool_size: usize) -> Result<Self> {
-    let pools: FramePools = [
-      FramePool::try_new(pool_size, 12)?, //   4kb
-      FramePool::try_new(pool_size, 13)?, //   8kb
-      FramePool::try_new(pool_size, 14)?, //  16kb
-      FramePool::try_new(pool_size, 15)?, //  32kb
-      FramePool::try_new(pool_size, 16)?, //  64kb
-      FramePool::try_new(pool_size, 17)?, // 128kb
-      FramePool::try_new(pool_size, 18)?, // 256kb
-      FramePool::try_new(pool_size, 19)?, // 512kb
-      FramePool::try_new(pool_size, 20)?, //   1mb
-      FramePool::try_new(pool_size, 21)?, //   2mb
-      FramePool::try_new(pool_size, 22)?, //   4mb
-      FramePool::try_new(pool_size, 23)?, //   8mb
-      FramePool::try_new(pool_size, 24)?, //  16mb
-      FramePool::try_new(pool_size, 25)?, //  32mb
-      FramePool::try_new(pool_size, 26)?, //  64mb
-      FramePool::try_new(pool_size, 27)?, // 128mb
-      FramePool::try_new(pool_size, 28)?, // 256mb
-      FramePool::try_new(pool_size, 29)?, // 512mb
-      FramePool::try_new(pool_size, 30)?, //   1gb
-      FramePool::try_new(pool_size, 31)?, //   2gb
-    ];
+    let mut pools: FramePools = vec![];
 
-    // PID sequence
-    Ok(Self(AtomicU64::new(1), pools))
+    for class in MIN_CLASS..MAX_CLASS {
+      pools.push(FramePool::try_new(pool_size, PageClass::try_new(class)?)?)
+    }
+
+    // (used, pids, pools)
+    Ok(Self(AtomicUsize::new(0), AtomicU64::new(1), pools))
   }
 
   // Private Helper Functions
-  fn pids(&self) -> &AtomicU64 {
+  fn used(&self) -> &AtomicUsize {
     &self.0
   }
 
-  fn pools(&self) -> &FramePools {
+  fn pids(&self) -> &AtomicU64 {
     &self.1
   }
 
   fn pools_mut(&mut self) -> &mut FramePools {
-    &mut self.1
+    &mut self.2
   }
 
-  fn pool(&self, class: u8) -> Result<&FramePool> {
-    let idx = class_index(class)?;
-    match self.pools().get(idx as usize) {
+  fn pool_mut(&mut self, class: &PageClass) -> Result<&mut FramePool> {
+    match self.pools_mut().get_mut(class.index()) {
       Some(pool) => Ok(pool),
-      None => Err(anyhow!("Page size class not found {}", class))
+      None => Err(anyhow!("Page size class not found {}", class.id()))
     }
   }
 
-  fn pool_mut(&mut self, class: u8) -> Result<&mut FramePool> {
-    let idx = class_index(class)?;
-    match self.pools_mut().get_mut(idx as usize) {
-      Some(pool) => Ok(pool),
-      None => Err(anyhow!("Page size class not found {}", class))
-    }
+  fn free(&mut self, len: usize) -> usize {
+    self.used().fetch_sub(len, Ordering::SeqCst)
   }
-}
 
-fn class_index(class: u8) -> Result<u8> {
-  if class <= 31u8 {
-    if class < 12u8 {
-      Ok(0)
-    } else {
-      Ok(class - 12u8)
-    }
-  } else {
-    Err(anyhow!("Page size class must be less than 31"))
-  }
-}
-
-// computes the class needed to fit a certain number of bytes
-fn class_to_fit(data_len_in_bytes: u32) -> Result<u8> {
-  let data_len = f64::from(data_len_in_bytes);
-  let total_len = data_len + f64::from(FRAME_HEADER_LEN);
-
-  if total_len <= f64::from(u32::MAX) {
-    Ok(class_index((total_len.log(10f64) / 2f64.log(10f64)).ceil() as u8)?)
-  } else {
-    Err(anyhow!("Page size class not found to fit {} header + data bytes", total_len.round()))
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_class_to_fit() -> Result<()> {
-    // Min class up to 4096b - 18b
-    assert_eq!(0, class_to_fit(0)?);
-    assert_eq!(0, class_to_fit(2u32.pow(1) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(2) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(3) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(4) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(5) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(6) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(7) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(8) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(9) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(10) + 1)?);
-    assert_eq!(0, class_to_fit(2u32.pow(11) + 1)?);
-
-    assert_eq!(1, class_to_fit(2u32.pow(12) + 1)?);
-    assert_eq!(2, class_to_fit(2u32.pow(13) + 1)?);
-    assert_eq!(3, class_to_fit(2u32.pow(14) + 1)?);
-    assert_eq!(4, class_to_fit(2u32.pow(15) + 1)?);
-
-    assert_eq!(5, class_to_fit(2u32.pow(16) + 1)?);
-    assert_eq!(6, class_to_fit(2u32.pow(17) + 1)?);
-    assert_eq!(7, class_to_fit(2u32.pow(18) + 1)?);
-    assert_eq!(8, class_to_fit(2u32.pow(19) + 1)?);
-
-    assert_eq!( 9, class_to_fit(2u32.pow(20) + 1)?);
-    assert_eq!(10, class_to_fit(2u32.pow(21) + 1)?);
-    assert_eq!(11, class_to_fit(2u32.pow(22) + 1)?);
-    assert_eq!(12, class_to_fit(2u32.pow(23) + 1)?);
-
-    assert_eq!(13, class_to_fit(2u32.pow(24) + 1)?);
-    assert_eq!(14, class_to_fit(2u32.pow(25) + 1)?);
-    assert_eq!(15, class_to_fit(2u32.pow(26) + 1)?);
-    assert_eq!(16, class_to_fit(2u32.pow(27) + 1)?);
-
-    assert_eq!(17, class_to_fit(2u32.pow(28) + 1)?);
-    assert_eq!(18, class_to_fit(2u32.pow(29) + 1)?);
-    assert_eq!(19, class_to_fit(2u32.pow(30) + 1)?);
-
-    if let Ok(class) = class_to_fit(2u32.pow(31)) {
-      assert!(false, "page class {} unexpectedly found for bytes {}", class, 2u32.pow(31))
-    }
-
-    if let Ok(class) = class_to_fit(u32::MAX) {
-      assert!(false, "page class {} unexpectedly found for bytes {}", class, u32::MAX)
-    }
-
-    Ok(())
+  fn alloc(&mut self, len: usize) -> usize {
+    self.used().fetch_add(len, Ordering::SeqCst)
   }
 }

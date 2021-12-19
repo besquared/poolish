@@ -5,7 +5,7 @@ use crate::{Page};
 pub struct ReadGuard<'a>(&'a Page);
 
 impl<'a> ReadGuard<'a> {
-  pub fn try_new(_: &'a Page) -> Result<Self> {
+  pub fn try_new(_: &Page) -> Result<Self> {
     todo!()
 
     //

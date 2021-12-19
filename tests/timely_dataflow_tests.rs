@@ -49,7 +49,7 @@ fn allocates_pages_in_ops() -> Result<()> {
         .map(move |rounds| {
           for _ in 0..rounds {
             let mut pages = pages_ref.lock().unwrap();
-            let mut handle = pages.new_handle(page_size).unwrap();
+            let mut handle = pages.try_new_handle(page_size).unwrap();
 
             pages.try_alloc(&mut handle).unwrap();
             page_count_ref.fetch_add(1, Ordering::SeqCst);
@@ -67,7 +67,8 @@ fn allocates_pages_in_ops() -> Result<()> {
     }
 
     // Make sure we got the right number of pages
-    assert_eq!(page_count.load(Ordering::Acquire), thread_count * pages_per_thread);
+    let page_count = page_count.load(Ordering::Acquire);
+    assert_eq!(page_count, thread_count * pages_per_thread);
   }).unwrap();
 
   Ok(())
