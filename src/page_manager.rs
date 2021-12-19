@@ -1,5 +1,4 @@
-mod frame;
-mod frame_pool;
+mod memory_pool;
 
 use anyhow::{
   anyhow, Result
@@ -14,13 +13,12 @@ use crate::{
   Page, PageClass, PageHandle, PageHandleState
 };
 
-pub use frame::*;
-pub use frame_pool::*;
+pub use memory_pool::*;
 
-pub type FramePools = Vec<FramePool>;
+pub type MemoryPools = Vec<MemoryPool>;
 
 #[derive(Debug)]
-pub struct PageManager(AtomicUsize, AtomicU64, FramePools);
+pub struct PageManager(AtomicUsize, AtomicU64, MemoryPools);
 
 impl PageManager {
   pub fn used_bytes(&self) -> usize {
@@ -53,12 +51,14 @@ impl PageManager {
     let class = handle.class();
 
     match state {
-      PageHandleState::Fizzled(pid) => match self.pool_mut(class)?.alloc() {
+      // if pid is 0 then this allocation
+      PageHandleState::Fizzled(pid) => match self.get_pool_mut(class)?.alloc() {
         Some(frame) => {
           handle.swizzle(&frame);
-          self.alloc(frame.len());
+          self.increment_used(frame.len());
           Ok(Page::try_alloc(cid, pid, frame)?)
         }
+
         None => Err(anyhow!("No more free space, need to write some memory to disk"))
       }
 
@@ -67,7 +67,7 @@ impl PageManager {
   }
 
   pub fn try_release(&mut self, handle: &mut PageHandle) -> Result<()> {
-    self.free(handle.class().size() as usize);
+    self.decrement_used(handle.class().size() as usize);
     Ok(())
   }
 
@@ -79,14 +79,14 @@ impl PageManager {
   }
 
   pub fn try_new(pool_size: usize) -> Result<Self> {
-    let mut pools: FramePools = vec![];
+    let mut memory_pools: MemoryPools = vec![];
 
     for class in MIN_CLASS..MAX_CLASS {
-      pools.push(FramePool::try_new(pool_size, PageClass::try_new(class)?)?)
+      memory_pools.push(MemoryPool::try_new(pool_size, PageClass::try_new(class)?)?)
     }
 
     // (used, pids, pools)
-    Ok(Self(AtomicUsize::new(0), AtomicU64::new(1), pools))
+    Ok(Self(AtomicUsize::new(0), AtomicU64::new(1), memory_pools))
   }
 
   // Private Helper Functions
@@ -98,22 +98,18 @@ impl PageManager {
     &self.1
   }
 
-  fn pools_mut(&mut self) -> &mut FramePools {
-    &mut self.2
-  }
-
-  fn pool_mut(&mut self, class: &PageClass) -> Result<&mut FramePool> {
-    match self.pools_mut().get_mut(class.index()) {
-      Some(pool) => Ok(pool),
-      None => Err(anyhow!("Page size class not found {}", class.id()))
-    }
-  }
-
-  fn free(&mut self, len: usize) -> usize {
+  fn decrement_used(&mut self, len: usize) -> usize {
     self.used().fetch_sub(len, Ordering::SeqCst)
   }
 
-  fn alloc(&mut self, len: usize) -> usize {
+  fn increment_used(&mut self, len: usize) -> usize {
     self.used().fetch_add(len, Ordering::SeqCst)
+  }
+
+  fn get_pool_mut(&mut self, class: &PageClass) -> Result<&mut MemoryPool> {
+    match self.2.get_mut(class.index()) {
+      Some(pool) => Ok(pool),
+      None => Err(anyhow!("Page size class not found {}", class.id()))
+    }
   }
 }

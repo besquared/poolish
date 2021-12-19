@@ -1,5 +1,6 @@
-mod alloc_pool;
-mod allocations;
+mod frame;
+mod frame_pool;
+mod frame_pools;
 
 use anyhow::{
   anyhow, Result
@@ -14,13 +15,14 @@ use crate::{
   Frame, PageClass
 };
 
-use alloc_pool::*;
-use allocations::*;
+pub use frame::*;
+use frame_pool::*;
+use frame_pools::*;
 
 #[derive(Debug)]
-pub struct FramePool(PageClass, Arc<MmapMut>, Arc<Mutex<Allocations>>);
+pub struct MemoryPool(PageClass, Arc<MmapMut>, Arc<Mutex<FramePools>>);
 
-impl FramePool {
+impl MemoryPool {
   pub fn class(&self) -> &PageClass {
     &self.0
   }
@@ -29,7 +31,7 @@ impl FramePool {
     &self.1.as_ref()
   }
 
-  pub fn frames(&self) -> &Mutex<Allocations> {
+  pub fn frames(&self) -> &Mutex<FramePools> {
     &self.2.as_ref()
   }
 
@@ -59,9 +61,9 @@ impl FramePool {
       return Err(anyhow!("Page pool size must be divisible by page size: {} / {}", pool_size, frame_size))
     }
 
-    // Allocate virtual memory
+    // Allocate virtual memory and frame pools
     let data = Arc::new(MmapMut::map_anon(pool_size)?);
-    let frames = Arc::new(Mutex::new(Allocations::try_new(data.clone(), frame_size)?));
+    let frames = Arc::new(Mutex::new(FramePools::try_new(data.clone(), frame_size)?));
 
     Ok(Self(class, data, frames))
   }

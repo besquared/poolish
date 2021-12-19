@@ -6,30 +6,30 @@ use memmap2::MmapMut;
 use std::sync::Arc;
 
 use crate::{ Frame };
-use super::{ AllocPool };
+use super::{ FramePool };
 
 #[derive(Clone, Debug)]
-pub struct Allocations(AllocPool, AllocPool);
+pub struct FramePools(FramePool, FramePool);
 
-impl Allocations {
-  pub fn free(&self) -> &AllocPool {
+impl FramePools {
+  pub fn free(&self) -> &FramePool {
     &self.0
   }
 
-  pub fn used(&self) -> &AllocPool {
+  pub fn used(&self) -> &FramePool {
     &self.1
   }
 
-  pub fn free_mut(&mut self) -> &mut AllocPool {
+  pub fn free_mut(&mut self) -> &mut FramePool {
     &mut self.0
   }
 
-  pub fn used_mut(&mut self) -> &mut AllocPool {
+  pub fn used_mut(&mut self) -> &mut FramePool {
     &mut self.1
   }
 
   pub fn try_new(data: Arc<MmapMut>, frame_size: usize) -> Result<Self> {
-    let mut free = AllocPool::new();
+    let mut free = FramePool::new();
     for offset in (0..data.len()).step_by(frame_size) {
       let frame_ptr = match data.get(offset) {
         Some(frame_ptr) => frame_ptr as *const u8,
@@ -39,6 +39,6 @@ impl Allocations {
       free.push_back(Frame::new(frame_ptr, frame_size));
     }
 
-    Ok(Self(free, AllocPool::new()))
+    Ok(Self(free, FramePool::new()))
   }
 }

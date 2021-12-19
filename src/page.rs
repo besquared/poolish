@@ -30,7 +30,7 @@ pub use read_write_guard::*;
 //
 // A logical page identifier
 // A versioned latch with a 48 bit version and a 16 bit state
-// A page frame with the pointer and length of the memory allocation
+// A page frame with the pointer and length of the memory memory_pool
 //
 
 #[derive(Debug)]
