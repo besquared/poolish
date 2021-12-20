@@ -1,3 +1,4 @@
+mod page_ident;
 mod page_latch;
 mod read_guard;
 mod read_opt_guard;
@@ -18,6 +19,7 @@ use crate::{ Frame, PageHandle };
 // RoPage
 //
 
+pub use page_ident::*;
 pub use page_latch::*;
 pub use read_guard::*;
 pub use read_opt_guard::*;
