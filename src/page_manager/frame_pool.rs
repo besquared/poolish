@@ -9,10 +9,7 @@ use memmap2::MmapMut;
 use parking_lot::Mutex;
 use std::sync::{ Arc };
 
-use crate::{
-  MAX_CLASS_ID,
-  Frame
-};
+use crate::{ MAX_CLASS_ID };
 
 use frame_deque::*;
 use frame_pools::*;
@@ -33,18 +30,22 @@ impl FramePool {
     &self.2.as_ref()
   }
 
-  pub fn alloc(&mut self) -> Option<Frame> {
+  pub fn alloc(&self) -> Option<usize> {
     let mut frames = self.pools().lock();
     if let Some(frame) = frames.free_mut().pop_front() {
-      frames.used_mut().push_back(frame.clone());
+      frames.used_mut().push_back(frame);
       Some(frame)
     } else {
       None
     }
   }
 
+  pub fn release(&self, address: usize) {
+    todo!("Release frame at address {}", address)
+  }
+
   pub fn try_new(pool_size: usize, cid: usize) -> Result<Self> {
-    // use page_class::size_of(cid) and page_class::size_of(MAX_CLASS_ID)
+    // TODO: use page_class::size_of(cid) and page_class::size_of(MAX_CLASS_ID)
     let frame_size = 2usize.pow(cid as u32);
     let max_frame_size = usize::pow(2usize, MAX_CLASS_ID as u32);
 

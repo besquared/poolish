@@ -49,9 +49,7 @@ fn allocates_pages_in_ops() -> Result<()> {
         .map(move |rounds| {
           for _ in 0..rounds {
             let mut pages = pages_ref.lock().unwrap();
-            let mut handle = pages.try_new_handle(page_size).unwrap();
-
-            pages.try_alloc(&mut handle).unwrap();
+            let _ = pages.try_alloc(page_size).unwrap();
             page_count_ref.fetch_add(1, Ordering::SeqCst);
           }
         })

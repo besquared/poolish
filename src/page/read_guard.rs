@@ -30,9 +30,7 @@ impl<'a> ReadOptGuard<'a> {
     let page = self.page();
     let vlds = page.frame().try_vlds()?;
 
-    let mut value = vlds.value();
-
-    if FrameVLDS::version(value) != self.version() {
+    if FrameVLDS::version(vlds.value()) != self.version() {
       return Ok(None)
     }
 

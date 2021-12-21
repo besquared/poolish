@@ -5,8 +5,7 @@ use anyhow::{
 use memmap2::MmapMut;
 use std::sync::Arc;
 
-use crate::{ Frame };
-use super::{FrameDeque};
+use super::{ FrameDeque };
 
 #[derive(Clone, Debug)]
 pub struct FramePools(FrameDeque, FrameDeque);
@@ -29,16 +28,16 @@ impl FramePools {
   }
 
   pub fn try_new(data: Arc<MmapMut>, frame_size: usize) -> Result<Self> {
-    let mut free = FrameDeque::new();
+    let mut free = FrameDeque::default();
     for offset in (0..data.len()).step_by(frame_size) {
-      let frame_ptr = match data.get(offset) {
-        Some(frame_ptr) => frame_ptr as *const u8,
+      let address = match data.get(offset) {
+        Some(address) => address as *const _ as usize,
         None => return Err(anyhow!("PoolAllocationError: Cannot get reference to byte at offset {}", offset))
       };
 
-      free.push_back(Frame::new(frame_ptr, frame_size));
+      free.push_back(address);
     }
 
-    Ok(Self(free, FrameDeque::new()))
+    Ok(Self(free, FrameDeque::default()))
   }
 }

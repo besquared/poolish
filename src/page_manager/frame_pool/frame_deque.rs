@@ -1,46 +1,24 @@
 use std::collections::VecDeque;
 
-use crate::{ Frame };
-
 #[derive(Clone, Debug)]
-pub struct FrameDeque(usize, VecDeque<Frame>);
+pub struct FrameDeque(VecDeque<usize>);
 
 impl FrameDeque {
-  pub fn new() -> Self {
-    Self(0, VecDeque::new())
+  pub fn pop_front(&mut self) -> Option<usize> {
+    self.0.pop_front()
   }
 
-  pub fn size(&self) -> usize {
-    self.0
+  pub fn push_back(&mut self, address: usize) -> () {
+    self.0.push_back(address)
   }
 
-  pub fn pop_front(&mut self) -> Option<Frame> {
-    match self.1.pop_front() {
-      None => None,
-      Some(frame) => {
-        self.0 -= frame.len();
-        Some(frame)
-      }
-    }
+  pub fn push_front(&mut self, address: usize) -> () {
+    self.0.push_front(address)
   }
+}
 
-  pub fn push_back(&mut self, frame: Frame) -> () {
-    self.0 += frame.len();
-    self.1.push_back(frame)
-  }
-
-  pub fn push_front(&mut self, frame: Frame) -> () {
-    self.0 += frame.len();
-    self.1.push_front(frame)
-  }
-
-  pub fn remove(&mut self, idx: usize) -> Option<Frame> {
-    match self.1.remove(idx) {
-      None => None,
-      Some(frame) => {
-        self.0 -= frame.len();
-        Some(frame)
-      }
-    }
+impl Default for FrameDeque {
+  fn default() -> Self {
+    Self(Default::default())
   }
 }

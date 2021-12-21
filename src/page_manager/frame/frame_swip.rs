@@ -10,6 +10,7 @@ pub const CID_MASK: usize = 0x02FF;
 pub const TAG_BITS: usize = 0x0001;
 pub const TAG_MASK: usize = 0x0001;
 
+#[derive(Debug)]
 pub struct FrameSWIP<'a>(&'a AtomicUsize);
 
 impl<'a> From<&'a AtomicUsize> for FrameSWIP<'a> {
@@ -45,8 +46,8 @@ impl<'a> FrameSWIP<'a> {
     value >> TAG_BITS >> CID_BITS
   }
 
-  pub fn pack(pid: usize, cid: usize) -> Self {
-    Self(Self::pack_pid(Self::pack_cid(Self::pack_tag(0), cid), pid))
+  pub fn pack(pid: usize, cid: usize) -> usize {
+    Self::pack_pid(Self::pack_cid(Self::pack_tag(0), cid), pid)
   }
 
   fn pack_tag(value: usize) -> usize {

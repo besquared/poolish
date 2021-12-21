@@ -1,27 +1,38 @@
+use anyhow::Result;
+use crate::{ Frame, Page };
+
 pub const CID_BITS: usize = 0x0006;
 pub const CID_MASK: usize = 0x02FF;
 
 pub const TAG_BITS: usize = 0x0001;
 pub const TAG_MASK: usize = 0x0001;
 
+#[derive(Clone, Debug)]
 pub enum PageSWIP {
-  Fizzled(FizzledSWIP),
-  Swizzled(SwizzledSWIP)
+  Fizzled(FizzledPageSWIP),
+  Swizzled(SwizzledPageSWIP)
 }
 
-impl PageSWIP {
-  pub fn new(value: usize) -> Self {
+impl From<usize> for PageSWIP {
+  fn from(value: usize) -> Self {
     if value & TAG_MASK == 1 {
-      PageSWIP::Fizzled(FizzledSWIP::new(swip))
+      Self::Fizzled(FizzledPageSWIP::from(value))
     } else {
-      PageSWIP::Swizzled(SwizzledSWIP::new(swip))
+      Self::Swizzled(SwizzledPageSWIP::from(value))
     }
   }
 }
 
-pub struct FizzledSWIP(usize);
+#[derive(Clone, Debug)]
+pub struct FizzledPageSWIP(usize);
 
-impl FizzledSWIP {
+impl From<usize> for FizzledPageSWIP {
+  fn from(swip: usize) -> Self {
+    Self(swip)
+  }
+}
+
+impl FizzledPageSWIP {
   pub fn value(&self) -> usize {
     self.0
   }
@@ -43,10 +54,6 @@ impl FizzledSWIP {
     Self(Self::pack_pid(Self::pack_cid(Self::pack_tag(0), cid), pid))
   }
 
-  pub fn new(value: usize) -> Self {
-    Self(value)
-  }
-
   fn pack_tag(value: usize) -> usize {
     (value & !TAG_MASK) | (1 & TAG_MASK)
   }
@@ -60,18 +67,28 @@ impl FizzledSWIP {
   }
 }
 
-pub struct SwizzledSWIP(usize);
+#[derive(Clone, Debug)]
+pub struct SwizzledPageSWIP(usize);
 
-impl SwizzledSWIP {
+impl From<usize> for SwizzledPageSWIP {
+  fn from(swip: usize) -> Self {
+    Self(swip)
+  }
+}
+
+impl TryInto<Page> for SwizzledPageSWIP {
+  type Error = anyhow::Error;
+  fn try_into(self) -> Result<Page> {
+    Ok(Page::from(Frame::try_from(self.address())?))
+  }
+}
+
+impl SwizzledPageSWIP {
   pub fn address(&self) -> usize {
     self.0
   }
 
   pub fn as_ptr(&self) -> *const u8 {
     self.address() as *const u8
-  }
-
-  pub fn new(address: usize) -> Self {
-    Self(address)
   }
 }
