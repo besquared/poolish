@@ -1,8 +1,8 @@
 mod page_ident;
-mod page_latch;
+mod page_state;
 mod read_guard;
-mod read_opt_guard;
-mod read_write_guard;
+mod share_guard;
+mod write_guard;
 
 use anyhow::{ Result };
 use core::hint::spin_loop;
@@ -11,110 +11,61 @@ use std::{
   io::{ Cursor, Write }
 };
 
-use crate::{ Frame, PageHandle };
-
-//
-// RwPage
-// RsPage
-// RoPage
-//
+use crate::{
+  FizzledSWIP, Frame,
+  PageHandle, PageSWIP
+};
 
 pub use page_ident::*;
-pub use page_latch::*;
+pub use frame_state::*;
 pub use read_guard::*;
-pub use read_opt_guard::*;
-pub use read_write_guard::*;
-
-//
-// A page is the entry point for reading and writing to virtual memory
-//
-// It consists of three parts
-//
-// A logical page identifier
-// A versioned latch with a 48 bit version and a 16 bit state
-// A page frame with the pointer and length of the memory memory_pool
-//
+pub use share_guard::*;
+pub use write_guard::*;
 
 #[derive(Debug)]
-pub struct Page(u64, Frame);
+pub struct Page(Frame);
+
+impl From<Frame> for Page {
+  fn from(frame: Frame) -> Self {
+    Self(frame)
+  }
+}
 
 impl Page {
-  pub fn pid(&self) -> u64 {
-    self.0
+  pub fn read_cid(&self) -> Result<usize> {
+    self.frame().read_cid()
   }
 
-  pub fn frame(&self) -> &Frame {
-    &self.1
+  pub fn read_pid(&self) -> Result<usize> {
+    self.frame().read_pid()
   }
 
-  pub fn frame_mut(&mut self) -> &mut Frame {
-    &mut self.1
-  }
-
-  pub fn latch(&self) -> Result<PageLatch> {
-    let frame = self.frame();
-    Ok(PageLatch::new(frame.latch_ref()?))
-  }
-
-  //
-  // Three kinds of accessors
   //
   // try_read
-  // try_read_opt
-  // try_read_write
+  // try_share
+  // try_write
   //
 
-  pub fn try_read_write(&mut self) -> Result<ReadWriteGuard> {
-    let latch = self.latch()?;
-
-    loop {
-      let mut value = latch.value();
-      let mut state = PageLatch::state(value);
-
-      if PageLatch::is_open(state) {
-        match latch.set_state(value, 1u8) {
-          Err(_) => continue,
-          Ok(_) => return Ok(ReadWriteGuard::new(self))
-        }
-      }
-
-      while !PageLatch::is_open(state) {
-        spin_loop();
-        value = latch.value();
-        state = PageLatch::state(value);
-      }
-    }
+  pub fn try_write(&mut self) -> Result<WriteGuard> {
+    WriteGuard::try_new(self, self.state()?)
   }
 
-  // pub fn lock_shared(&mut self) -> Option<SharedPageGuard<'a>> {
-  //   // If the latch is open then cas(0, 2)
-  //   // If the latch is shared then cas(shared_count, shared_count + 1)
-  //   // If the latch is exclusive then wait for it to be unlocked, loop
-  //   None
-  // }
-
-  // pub fn lock_optimistic(&mut self) -> Option<OptimisticPageGuard<'a>> {
-  //   // If the latch is open then return page guard
-  //   // If the latch is shared then return page guard
-  //   // If the latch is exclusive then wait for it to be unlocked, loop
-  //
-  //   None
-  // }
-
-  // Constructors
-
-  pub fn try_alloc(cid: u8, pid: u64, mut frame: Frame) -> Result<Self> {
+  pub fn try_alloc(swip: &FizzledSWIP, state: &PageState, mut frame: Frame) -> Result<Self> {
     let mut cursor = Cursor::new(frame.as_mut());
 
-    cursor.write(&cid.to_le_bytes())?;
-    cursor.write(&pid.to_le_bytes())?;
-    cursor.write(&1u8.to_le_bytes())?;  // Dirty page
-    cursor.write(&0u64.to_le_bytes())?; // Open latch
+    cursor.write(&swip.value().to_le_bytes())?;
+    cursor.write(&state.value().to_le_bytes())?;
 
     Ok(Self(pid, frame))
   }
 
-  pub fn try_fetch(handle: &PageHandle, frame: Frame) -> Result<Self> {
-    Ok(Self(handle.pid(), frame))
+  // Private Accessors
+
+  fn frame(&self) -> &Frame {
+    &self.1
+  }
+
+  fn frame_mut(&mut self) -> &mut Frame {
+    &mut self.1
   }
 }

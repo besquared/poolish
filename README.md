@@ -32,7 +32,7 @@ Pages specifically makes several design choices and imposes several constraints
 
 ### Pointer Tags
 
-In a computer, memory addresses are integers that reference a location in the computer's main memory system. Even though 
+In a computer, memory addresses are integers that reference a location in the computer's main memory system. Even though
 the main memory system is made up of a large collection of individual bits, on most modern systems, valid memory addresses
 have a minimum granularity of one byte (8 bits). That means that each valid memory address references the location of one
 byte of the main memory.
@@ -53,7 +53,7 @@ Now that we know how memory is addressed let's talk about the addresses themselv
 is represented as a 64-bit integer. If we exclude the address `0`, which is an unusable, reserved address, then the smallest
 valid memory address would be `8` followed by `16`, `24`, etc. up to the largest valid address which is 2^64 - 8.
 
-A 64-bit machine uses 64-bit memory addresses. These addresses are integers which we can see represented in binary:
+These addresses are integers which we can see represented in binary:
 
 ```
  8 = 0000 0000 0000 1000
@@ -63,11 +63,11 @@ A 64-bit machine uses 64-bit memory addresses. These addresses are integers whic
 ```
 
 The important thing to note here is that all addresses must be a multiple of 8 since they address the location of a byte.
-This means that a valid memory address is always an integer where the least significant bits are `000` on a 64-bit system,
-`00` on a 32-bit systems, and `0` on a 16-bit system.
+This means that a valid memory address is always an integer where the least significant bits are `000` on 64-bit systems,
+`00` on 32-bit systems, and `0` on 16-bit systems.
 
 In rust these addresses are represented using `pointers`. A pointer is a usize integer that can be de-referenced using the
-operator `*` to obtain the value stored at that corresponding memory address. When using a pointers it's important to never
+operator `*` to obtain the value stored at that corresponding memory address. When using a pointer it's important to never
 de-reference one whose least significant bits aren't zero, as that is never a valid memory address. However, when the pointer
 is at rest we can treat it as we might any other integer and use those bits to store additional type information, so long as
 we make sure to set them to zero before we attempt to de-reference the pointer and read from the main memory. This technique
@@ -92,4 +92,48 @@ let is_tagged_ptr_tagged: bool = tagged_ptr & 1usize == 1usize;
 
 // Read original value
 let value = *((tagged_ptr - 1) as *const u32);
+```
+
+### Memory Layout
+
+The size of the SWIP and State fields are architecture dependent.
+On 64-bit systems they are 64-bits and on 32-bit systems they are 32 bits.
+In both cases the last 2 fields are of fixed length on every architecture and the first fields are allowed to be variable.
+
+```
+Page Layout (64-bit systems)
+
++------------------------------------------------------+
+| Field | Bits      |  Description                     |
+|-------+-----------+----------------------------------|
+| SWIP  |        64 |  SWIP of this page               |
+| VLDS  |        64 |  Version, latch, and dirty state |
+| Data  | LEN - 128 |  Page data                       |
++------------------------------------------------------+
+
+Note: In 32 bit systems SWIP is 32 bits, State is 32 bits, and Data is LEN - 64 bits
+
+SWIP Layout (64-bit systems)
+
++---------------------------------------------------------------+
+| Field | Bits |  Description                                   |
+|-------+------+------------------------------------------------|
+| PID   |   57 |  The logical page id of the page               |
+| CID   |    6 |  The class id of the page, LEN is 2^CID bytes  |
+| Flag  |    1 |  The swizzle flag, this bit is always set to 1  |
++---------------------------------------------------------------+
+
+Note: In 32-bit systems the PID field is 25 bits
+
+VLDS Layout (64-bit systems)
+
++------------------------------------------------------------------+
+| Field       | Bits |  Description                                |
+|-------------+------+---------------------------------------------|
+| Version     |   48 |  Version of the page                        |
+| Latch State |   15 |  0 for open, 1 for write, N > 1 for shared  |
+| Dirty State |    1 |  0 for clean, 1 for dirty                   |
++------------------------------------------------------------------+
+
+Note: In 32-bit systems the Version field is 16 bits
 ```

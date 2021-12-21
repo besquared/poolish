@@ -3,17 +3,21 @@ use std::{
   sync::atomic::{ AtomicUsize, Ordering }
 };
 
-pub struct PageIdent(AtomicUsize, VecDeque<usize>);
+use parking_lot::{Mutex, MutexGuard, RawMutex};
+
+pub struct PageIdent(Mutex<AtomicUsize>, VecDeque<usize>);
 
 impl PageIdent {
   pub fn next(&mut self) -> usize {
+    let guard = self.counter().lock();
     match self.free_ids_mut().pop_front() {
       Some(free_id) => free_id,
-      None => self.generate_id()
+      None => generate_id(&guard)
     }
   }
 
   pub fn free(&mut self, pid: usize) {
+    self.counter().lock();
     self.free_ids_mut().push_back(pid)
   }
 
@@ -23,15 +27,15 @@ impl PageIdent {
 
   // Private Helpers
 
-  fn counter_mut(&mut self) -> &mut AtomicUsize {
-    &mut self.0
+  fn counter(&self) -> &Mutex<AtomicUsize> {
+    &self.0
   }
 
   fn free_ids_mut(&mut self) -> &mut VecDeque<usize> {
     &mut self.1
   }
 
-  fn generate_id(&mut self) -> usize {
-    self.counter_mut().fetch_add(2, Ordering::SeqCst)
+  fn generate_id(guard: &MutexGuard<AtomicUsize>) -> usize {
+    guard.fetch_add(2, Ordering::SeqCst)
   }
 }

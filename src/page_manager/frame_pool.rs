@@ -1,5 +1,4 @@
-mod frame;
-mod frame_pool;
+mod frame_deque;
 mod frame_pools;
 
 use anyhow::{
@@ -11,20 +10,19 @@ use parking_lot::Mutex;
 use std::sync::{ Arc };
 
 use crate::{
-  MAX_CLASS,
-  Frame, PageClass
+  MAX_CLASS_ID,
+  Frame
 };
 
-pub use frame::*;
-use frame_pool::*;
+use frame_deque::*;
 use frame_pools::*;
 
 #[derive(Debug)]
-pub struct MemoryPool(PageClass, Arc<MmapMut>, Arc<Mutex<FramePools>>);
+pub struct FramePool(usize, Arc<MmapMut>, Arc<Mutex<FramePools>>);
 
-impl MemoryPool {
-  pub fn class(&self) -> &PageClass {
-    &self.0
+impl FramePool {
+  pub fn cid(&self) -> usize {
+    self.0
   }
 
   pub fn data(&self) -> &MmapMut {
@@ -45,9 +43,9 @@ impl MemoryPool {
     }
   }
 
-  pub fn try_new(pool_size: usize, class: PageClass) -> Result<Self> {
-    let frame_size = 2usize.pow(class.id() as u32);
-    let max_frame_size = usize::pow(2usize, MAX_CLASS as u32);
+  pub fn try_new(pool_size: usize, cid: usize) -> Result<Self> {
+    let frame_size = 2usize.pow(cid as u32);
+    let max_frame_size = usize::pow(2usize, MAX_CLASS_ID as u32);
 
     if frame_size > max_frame_size {
       return Err(anyhow!("Page size must be less than {} bytes", max_frame_size))

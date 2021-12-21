@@ -1,4 +1,5 @@
-mod memory_pool;
+mod frame;
+mod frame_pool;
 
 use anyhow::{
   anyhow, Result
@@ -9,100 +10,89 @@ use std::sync::atomic::{
 };
 
 use crate::{
-  MAX_CLASS, MIN_CLASS,
-  Page, PageClass, PageHandle, PageHandleState
+  MAX_CLASS_ID,
+  MIN_CLASS_ID,
+  Page, PageHandle,
+  PageIdent, PageSWIP,
+  FizzledSWIP,
+  page_class
 };
 
-pub use memory_pool::*;
+pub use frame::*;
+pub use frame_pool::*;
 
-pub type MemoryPools = Vec<MemoryPool>;
+pub type MemoryPools = Vec<FramePool>;
 
 #[derive(Debug)]
-pub struct PageManager(AtomicUsize, AtomicU64, MemoryPools);
+pub struct PageManager(MemoryPools, PageIdent, AtomicUsize);
 
 impl PageManager {
   pub fn used_bytes(&self) -> usize {
     self.0.load(Ordering::Acquire)
   }
 
-  pub fn try_fetch(&self, handle: &mut PageHandle) -> Result<Page> {
-    match handle.state() {
-      PageHandleState::Fizzled(_pid) => {
-        todo!()
-        // This page is cold, check the fridge, and then the freezer
+  pub fn try_swip(&mut self, len: u32) -> Result<FizzledSWIP> {
+    let pid = self.page_ids().next();
+    Ok(FizzledSWIP::pack(pid, page_class::cid_to_fit(len)?))
+  }
+
+  pub fn try_free(&mut self, page: &mut Page) -> Result<()> {
+    let guard = page.try_write()?;
+    self.decrement_used(PageClass::size_of(guard.read_cid()?));
+    Ok(())
+  }
+
+  pub fn try_fetch<'a>(&self, swip: &PageSWIP) -> Result<Page> {
+    match swip {
+      PageSWIP::Fizzled(_pid) => {
+        todo!("Check the fridge and freezer for this page")
       }
 
-      PageHandleState::Swizzled(frame_ptr) => {
-        let frame_ptr: *const u8 = unsafe {
-          std::mem::transmute(frame_ptr)
-        };
-
+      PageSWIP::Swizzled(swip) => {
+        let frame_ptr = swip.address() as *const u8;
         let frame_len = handle.class().size() as usize;
-
-        // This is already hot, create a fetched page with this
-        Ok(Page::try_fetch(handle, Frame::new(frame_ptr, frame_len))?)
+        Ok(Page::new(Frame::new(frame_ptr, frame_len))?)
       }
     }
   }
 
-  // Make this consume a page handle that is un-initialized
-  //  Set the handle pid with a sequence number and return page
+  // This isn't going to work cause I gotta swizzle this
   pub fn try_alloc(&mut self, handle: &mut PageHandle) -> Result<Page> {
-    let cid = handle.cid();
-    let state = handle.state();
-    let class = handle.class();
-
-    match state {
-      // if pid is 0 then this allocation
-      PageHandleState::Fizzled(pid) => match self.get_pool_mut(class)?.alloc() {
+    match handle.swip() {
+      PageSWIP::Fizzled(swip) => match self.pool_mut(swip.cid()?)?.alloc() {
         Some(frame) => {
-          handle.swizzle(&frame);
+          handle.swizzle(frame.address());
           self.increment_used(frame.len());
-          Ok(Page::try_alloc(cid, pid, frame)?)
+          Ok(Page::try_alloc(&swip, &state, frame)?)
         }
 
         None => Err(anyhow!("No more free space, need to write some memory to disk"))
       }
 
-      PageHandleState::Swizzled(_ptr) => Err(anyhow!("Cannot alloc an already allocated page"))
+      PageSWIP::Swizzled(_ptr) => Err(anyhow!("Cannot alloc an already allocated page"))
     }
-  }
-
-  pub fn try_release(&mut self, handle: &mut PageHandle) -> Result<()> {
-    self.decrement_used(handle.class().size() as usize);
-    Ok(())
-  }
-
-  //
-  // This shouldn't assign a pid:
-  //
-  //  let mut handle = PageHandle::try_new(bytes_to_fit)
-  //  let page = pages.try_alloc(&mut handle)?
-  //
-  pub fn try_new_handle(&mut self, data_len_in_bytes: u32) -> Result<PageHandle> {
-    let pid = self.pids().fetch_add(1, Ordering::SeqCst);
-    let class = PageClass::try_new_to_fit(data_len_in_bytes)?;
-
-    Ok(PageHandle::new(pid, class))
   }
 
   pub fn try_new(pool_size: usize) -> Result<Self> {
-    let mut memory_pools: MemoryPools = vec![];
+    let mut pools: MemoryPools = vec![];
 
-    for class in MIN_CLASS..MAX_CLASS {
-      memory_pools.push(MemoryPool::try_new(pool_size, PageClass::try_new(class)?)?)
+    for cid in MIN_CLASS_ID..=MAX_CLASS_ID {
+      pools.push(frame_pool::try_new(pool_size, cid)?)
     }
 
-    // (used, pids, pools)
-    Ok(Self(AtomicUsize::new(0), AtomicU64::new(1), memory_pools))
+    Ok(Self(pools, PageIdent::new(), AtomicUsize::new(0)))
   }
 
-  // Private Helper Functions
-  fn used(&self) -> &AtomicUsize {
-    &self.0
+  // Private Accessors + Helpers
+
+  fn pool_mut(&mut self, cid: usize) -> Result<&mut frame_pool> {
+    match self.0.get_mut(page_class::index_of(cid)) {
+      Some(pool) => Ok(pool),
+      None => Err(anyhow!("Page size class not found {}", cid))
+    }
   }
 
-  fn pids(&self) -> &AtomicU64 {
+  fn page_ids(&self) -> &PageIdent {
     &self.1
   }
 
@@ -112,12 +102,5 @@ impl PageManager {
 
   fn increment_used(&mut self, len: usize) -> usize {
     self.used().fetch_add(len, Ordering::SeqCst)
-  }
-
-  fn get_pool_mut(&mut self, class: &PageClass) -> Result<&mut MemoryPool> {
-    match self.2.get_mut(class.index()) {
-      Some(pool) => Ok(pool),
-      None => Err(anyhow!("Page size class not found {}", class.id()))
-    }
   }
 }

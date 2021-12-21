@@ -1,90 +1,47 @@
+mod page_swip;
+
 use std::sync::atomic::{
   AtomicUsize, Ordering
 };
 
-use crate::{ Frame, PageClass };
+use crate::{ Frame };
 
-/**
- *
- * A handle to a page
- *
- * When a handle is allocated we store the logical pid, the size class,
- *  and an atomic i64 ("handle") which stores either the pid if the page is on disk,
- *  or the virtual memory address of the page if it is in memory
- *
- * If a page is on disk (fizzled) then the handle will be zero
- * If a page is in memory (swizzled) then the handle will be positive
- *
- */
-
-//
-// todo: We should make this work with tagged pointers instead
-//  on 64 bit systems the least significant (right-most) 3 bits aren't used
-//  when a pointer is de-referenced those bytes must be 0 but at rest they can
-//  store some type information.
-//
-// For our system we'll use the least significant bit set to 1 to indicate that
-//  the value is a pid and not a pointer. This means that pids are only ever odd
-//  numbers. If a value is odd it's a pid (value & 1 == 1) otherwise we know that
-//  it's a pointer and can be safely de-referenced.
-//
+pub use page_swip::*;
 
 #[derive(Debug)]
-pub struct PageHandle(u64, PageClass, AtomicUsize);
+pub struct PageHandle<'a>(&'a AtomicUsize);
 
-impl PageHandle {
-  pub fn pid(&self) -> u64 {
-    self.0
+impl<'a> From<&'a usize> for PageHandle<'a> {
+  fn from(handle_ref: &'a usize) -> Self {
+    Self(Self::make_handle(handle_ref))
+  }
+}
+
+impl<'a> PageHandle<'a> {
+  pub fn swip(&self) -> PageSWIP {
+    PageSWIP::new(self.value())
   }
 
-  pub fn cid(&self) -> u8 {
-    self.class().id()
+  pub fn swizzle(&mut self, address: usize) {
+    match self.swip() {
+      PageSWIP::Swizzled(_) => (),
+      PageSWIP::Fizzled(_) => self.handle().swap(address, Ordering::SeqCst)
+    }
   }
 
-  pub fn class(&self) -> &PageClass {
-    &self.1
+  // Private Accessors + Helpers
+
+  fn handle(&self) -> &AtomicUsize {
+    &self.0
   }
 
-  pub fn handle(&self) -> &AtomicUsize {
-    &self.2
-  }
-
-  pub fn value(&self) -> usize {
+  fn value(&self) -> usize {
     self.handle().load(Ordering::Acquire)
   }
 
-  pub fn state(&self) -> PageHandleState {
-    PageHandleState::new(self.pid(), self.value())
-  }
-
-  pub fn fizzle(&mut self) -> usize {
-    self.handle().swap(0, Ordering::SeqCst)
-  }
-
-  pub fn swizzle(&mut self, frame: &Frame) -> usize {
-    let frame_ptr = frame.as_ref().as_ptr();
-    self.handle().swap(frame_ptr as usize, Ordering::SeqCst)
-  }
-
-  // Constructors
-
-  pub fn new(pid: u64, class: PageClass) -> Self {
-    Self(pid, class, AtomicUsize::from(0))
-  }
-}
-
-pub enum PageHandleState {
-  Fizzled(u64),
-  Swizzled(usize)
-}
-
-impl PageHandleState {
-  pub fn new(pid: u64, handle: usize) -> Self {
-    if handle == 0 {
-      PageHandleState::Fizzled(pid)
-    } else {
-      PageHandleState::Swizzled(handle)
+  fn make_handle(handle_ref: &usize) -> &AtomicUsize {
+    unsafe {
+      &(*(handle_ref as *const usize as *const AtomicUsize))
     }
   }
 }
-

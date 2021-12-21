@@ -3,9 +3,9 @@ use std::collections::VecDeque;
 use crate::{ Frame };
 
 #[derive(Clone, Debug)]
-pub struct FramePool(usize, VecDeque<Frame>);
+pub struct FrameDeque(usize, VecDeque<Frame>);
 
-impl FramePool {
+impl FrameDeque {
   pub fn new() -> Self {
     Self(0, VecDeque::new())
   }
