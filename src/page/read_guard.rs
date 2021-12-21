@@ -1,24 +1,18 @@
 use anyhow::Result;
 use std::io::Write;
 
-use crate::{Page, FrameState};
+use crate::{ Page, FrameVLDS };
 
 #[derive(Debug)]
-pub struct ReadOptGuard<'a>(&'a Page, u64);
+pub struct ReadOptGuard<'a>(&'a Page, usize);
 
 impl<'a> ReadOptGuard<'a> {
   pub fn page(&self) -> &Page {
     &self.0
   }
 
-  pub fn version(&self) -> u64 {
+  pub fn version(&self) -> usize {
     self.1
-  }
-
-  pub fn unlock(self) -> () {
-    todo!()
-    // returns the new version number
-    // update version here once we unlock
   }
 
   // pub fn lock_optimistic(&mut self) -> Option<OptimisticPageGuard<'a>> {
@@ -34,36 +28,27 @@ impl<'a> ReadOptGuard<'a> {
   //  Otherwise returns Some(usize) which is the number of bytes written/read
   pub fn try_read<W: AsRef<[u8]> + Write>(&'a mut self, offset: usize, len: usize, dest: &mut W) -> Result<Option<usize>> {
     let page = self.page();
-    let latch = page.state()?;
+    let vlds = page.frame().try_vlds()?;
 
-    let mut value = latch.value();
-    let mut state = FrameState::latch(value);
-    let mut version = FrameState::version(value);
+    let mut value = vlds.value();
 
-    if version != self.version() {
+    if FrameVLDS::version(value) != self.version() {
       return Ok(None)
     }
 
     loop {
-      if FrameState::is_exclusive(state) {
-        // Wait on access to this page
-        while FrameState::is_exclusive(state) {
-          core::hint::spin_loop();
+      while FrameVLDS::is_exclusive(FrameVLDS::latch(vlds.value())) {
+        core::hint::spin_loop();
+      }
 
-          value = latch.value();
-          state = FrameState::latch(value);
-          version = FrameState::version(value);
-        }
-      }  else {
-        // Read into dest buffer
-        let dest_bytes = page.frame().read(offset, len, dest)?;
+      // Read into dest buffer
+      let bytes_read = page.frame().try_data()?.try_read(offset, len, dest)?;
 
-        // Recheck version
-        return if version != self.version() {
-          Ok(None)
-        } else {
-          Ok(Some(dest_bytes))
-        }
+      // Recheck version
+      return if FrameVLDS::version(vlds.value()) != self.version() {
+        Ok(None)
+      } else {
+        Ok(Some(bytes_read))
       }
     }
   }

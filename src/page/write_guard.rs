@@ -1,11 +1,17 @@
 use anyhow::Result;
 use core::hint::spin_loop;
-use std::io::Read;
-use std::ops::Deref;
-use crate::{Frame, Page, FrameState};
+
+use std::{
+  io::{ Read, Write },
+  ops::Deref
+};
+
+use crate::{
+  Frame, FrameVLDS, Page
+};
 
 #[derive(Debug)]
-pub struct WriteGuard<'a>(&'a mut Page, FrameState<'a>);
+pub struct WriteGuard<'a>(&'a mut Page, FrameVLDS<'a>);
 
 // impl<'a> Drop for WriteGuard<'a> {
 //   fn drop(&mut self) {
@@ -35,32 +41,32 @@ impl<'a> Deref for WriteGuard<'a> {
 }
 
 impl<'a> WriteGuard<'a> {
-  pub fn read<W: Wite>(&mut self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
-    Ok(self.frame().read(offset, len, dest)?)
+  pub fn read<W: Write>(&self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
+    Ok(self.frame().try_data()?.try_read(offset, len, dest)?)
   }
 
-  pub fn write<R: Read>(&mut self, offset: usize, len: usize, data: &mut R) -> Result<usize> {
-    Ok(self.frame_mut().write(offset, len, data)?)
+  pub fn write<R: Read>(&self, offset: usize, len: usize, data: &mut R) -> Result<usize> {
+    Ok(self.frame().try_data()?.try_write(offset, len, data)?)
   }
 
-  pub fn try_new(page: &'a mut Page, state: FrameState<'a>) -> Result<Self> {
-    let mut value = state.value();
-    let mut latch = FrameState::latch(value);
+  pub fn try_new(page: &'a mut Page, vlds: FrameVLDS<'a>) -> Result<Self> {
+    let mut value = vlds.value();
+    let mut latch = FrameVLDS::latch(value);
 
     loop {
-      if FrameState::is_open(latch) {
+      if FrameVLDS::is_open(latch) {
         match latch.lock_write(value) {
           Err(_) => continue,
           Ok(_) => return Ok(Self(page, latch))
         }
       }
 
-      while !FrameState::is_open(FrameState::latch(latch.value())) {
+      while !FrameVLDS::is_open(FrameVLDS::latch(vlds.value())) {
         spin_loop();
       }
 
-      value = state.value();
-      latch = FrameState::latch(value);
+      value = vlds.value();
+      latch = FrameVLDS::latch(value);
     }
   }
 
@@ -68,9 +74,5 @@ impl<'a> WriteGuard<'a> {
 
   fn frame(&self) -> &Frame {
     self.0.frame()
-  }
-
-  fn frame_mut(&mut self) -> &mut Frame {
-    self.0.frame_mut()
   }
 }

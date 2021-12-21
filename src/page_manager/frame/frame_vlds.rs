@@ -53,9 +53,9 @@ impl<'a> FrameVLDS<'a> {
 
   // Private Helpers
 
-  fn make_atomic(state_ref: &usize) -> &AtomicUsize {
+  fn make_atomic(atomic_ref: &usize) -> &AtomicUsize {
     unsafe {
-      &(*(state_ref as *const usize as *const AtomicUsize))
+      &(*(atomic_ref as *const usize as *const AtomicUsize))
     }
   }
 

@@ -29,12 +29,12 @@ impl FramePool {
     &self.1.as_ref()
   }
 
-  pub fn frames(&self) -> &Mutex<FramePools> {
+  pub fn pools(&self) -> &Mutex<FramePools> {
     &self.2.as_ref()
   }
 
   pub fn alloc(&mut self) -> Option<Frame> {
-    let mut frames = self.frames().lock();
+    let mut frames = self.pools().lock();
     if let Some(frame) = frames.free_mut().pop_front() {
       frames.used_mut().push_back(frame.clone());
       Some(frame)
@@ -44,6 +44,7 @@ impl FramePool {
   }
 
   pub fn try_new(pool_size: usize, cid: usize) -> Result<Self> {
+    // use page_class::size_of(cid) and page_class::size_of(MAX_CLASS_ID)
     let frame_size = 2usize.pow(cid as u32);
     let max_frame_size = usize::pow(2usize, MAX_CLASS_ID as u32);
 
@@ -63,6 +64,6 @@ impl FramePool {
     let data = Arc::new(MmapMut::map_anon(pool_size)?);
     let frames = Arc::new(Mutex::new(FramePools::try_new(data.clone(), frame_size)?));
 
-    Ok(Self(class, data, frames))
+    Ok(Self(cid, data, frames))
   }
 }

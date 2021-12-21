@@ -18,6 +18,12 @@ impl<'a> From<&'a AtomicUsize> for FrameSWIP<'a> {
   }
 }
 
+impl<'a> From<&'a usize> for FrameSWIP<'a> {
+  fn from(swip: &'a usize) -> Self {
+    Self::from(Self::make_atomic(swip))
+  }
+}
+
 impl<'a> FrameSWIP<'a> {
   fn swip(&self) -> &AtomicUsize {
     &self.0
@@ -53,5 +59,11 @@ impl<'a> FrameSWIP<'a> {
 
   fn pack_pid(value: usize, pid: usize) -> usize {
     (value & (TAG_MASK + CID_MASK)) | (pid << TAG_BITS << CID_BITS)
+  }
+
+  fn make_atomic(atomic_ref: &usize) -> &AtomicUsize {
+    unsafe {
+      &(*(atomic_ref as *const usize as *const AtomicUsize))
+    }
   }
 }

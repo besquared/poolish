@@ -67,6 +67,10 @@ impl SwizzledSWIP {
     self.0
   }
 
+  pub fn as_ptr(&self) -> *const u8 {
+    self.address() as *const u8
+  }
+
   pub fn new(address: usize) -> Self {
     Self(address)
   }

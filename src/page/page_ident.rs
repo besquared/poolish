@@ -12,7 +12,7 @@ impl PageIdent {
     let guard = self.counter().lock();
     match self.free_ids_mut().pop_front() {
       Some(free_id) => free_id,
-      None => generate_id(&guard)
+      None => Self::generate_id(&guard)
     }
   }
 

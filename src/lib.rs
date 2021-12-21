@@ -10,8 +10,8 @@ pub use page_class::*;
 pub use page_handle::*;
 pub use page_manager::*;
 
-pub const PID_LEN: u8 = 8;
-pub const CLASS_LEN: u8 = 1;
-pub const DIRTY_LEN: u8 = 1;
-pub const LATCH_LEN: u8 = 8;
-pub const HEADER_LEN: u8 = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
+pub const PID_LEN: usize = 8;
+pub const CLASS_LEN: usize = 1;
+pub const DIRTY_LEN: usize = 1;
+pub const LATCH_LEN: usize = 8;
+pub const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
