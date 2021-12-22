@@ -11,27 +11,27 @@ pub const TAG_BITS: usize = 0x0001;
 pub const TAG_MASK: usize = 0x0001;
 
 #[derive(Debug)]
-pub struct FrameSWIP<'a>(&'a AtomicUsize);
+pub struct PageSWIP<'a>(&'a AtomicUsize);
 
-impl<'a> From<&'a AtomicUsize> for FrameSWIP<'a> {
+impl<'a> From<&'a AtomicUsize> for PageSWIP<'a> {
   fn from(swip: &'a AtomicUsize) -> Self {
     Self(swip)
   }
 }
 
-impl<'a> From<&'a usize> for FrameSWIP<'a> {
+impl<'a> From<&'a usize> for PageSWIP<'a> {
   fn from(swip: &'a usize) -> Self {
     Self::from(Self::make_atomic_ref(swip))
   }
 }
 
-impl<'a> From<&'a [u8]> for FrameSWIP<'a> {
+impl<'a> From<&'a [u8]> for PageSWIP<'a> {
   fn from(slice: &'a [u8]) -> Self {
     Self::from(Self::make_usize_ref(slice))
   }
 }
 
-impl<'a> FrameSWIP<'a> {
+impl<'a> PageSWIP<'a> {
   fn swip(&self) -> &AtomicUsize {
     &self.0
   }

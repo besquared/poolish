@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
-pub struct FrameDeque(VecDeque<usize>);
+pub struct FreePool(VecDeque<usize>);
 
-impl FrameDeque {
+impl FreePool {
   pub fn pop_front(&mut self) -> Option<usize> {
     self.0.pop_front()
   }
@@ -17,7 +17,7 @@ impl FrameDeque {
   }
 }
 
-impl Default for FrameDeque {
+impl Default for FreePool {
   fn default() -> Self {
     Self(Default::default())
   }

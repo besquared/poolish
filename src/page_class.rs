@@ -25,8 +25,8 @@ pub fn index_of(cid: usize) -> usize {
   cid - MIN_CLASS_ID
 }
 
-pub fn to_fit(data_len_in_bytes: u32) -> Result<usize> {
-  let raw_cid = exp_to_fit(data_len_in_bytes)?;
+pub fn to_fit(data_len: u32) -> Result<usize> {
+  let raw_cid = exp_to_fit(data_len)?;
 
   if raw_cid <= MIN_CLASS_ID {
     Ok(MIN_CLASS_ID) // Clamp to min value

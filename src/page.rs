@@ -1,6 +1,6 @@
-mod read_guard;
-mod share_guard;
-mod write_guard;
+mod page_data;
+mod page_swip;
+mod page_vlds;
 
 use anyhow::{ Result };
 
@@ -9,13 +9,12 @@ use std::{
 };
 
 use crate::{
-  SWIP_LEN, VLDS_LEN, page_class,
-  FrameData, FrameSWIP, FrameVLDS, PageHandle
+  SWIP_LEN, VLDS_LEN, page_class
 };
 
-pub use read_guard::*;
-pub use share_guard::*;
-pub use write_guard::*;
+pub use page_data::*;
+pub use page_swip::*;
+pub use page_vlds::*;
 
 #[derive(Debug)]
 pub struct Page<'a>(&'a mut [u8]);
@@ -23,31 +22,24 @@ pub struct Page<'a>(&'a mut [u8]);
 // Methods
 
 impl<'a> Page<'a> {
-  fn swip(&'a self) -> FrameSWIP<'a> {
-    FrameSWIP::from(Self::slice_swip(self.0))
+  pub fn len(&self) -> usize {
+    self.0.len()
   }
 
-  fn vlds(&'a self) -> FrameVLDS<'a> {
-    FrameVLDS::from(Self::slice_vlds(self.0))
+  pub fn swip(&'a self) -> PageSWIP<'a> {
+    PageSWIP::from(Self::slice_swip(self.0))
   }
 
-  fn data(&'a self) -> FrameData<'a> {
-    FrameData::from(Self::slice_data_mut(self.0, self.0.len()))
+  pub fn vlds(&'a self) -> PageVLDS<'a> {
+    PageVLDS::from(Self::slice_vlds(self.0))
   }
 
-  // What is the point of this exactly?
-  pub fn try_handle(&self) -> Result<PageHandle> {
-    Ok(PageHandle::from(self.swip()))
+  pub fn data(&'a self) -> PageData<&'a [u8]> {
+    PageData::from(Self::slice_data(self.0, self.0.len()))
   }
 
-  //
-  // try_read
-  // try_share
-  // try_write
-  //
-
-  pub fn try_write(&'a mut self) -> Result<WriteGuard<'a>> {
-    WriteGuard::try_new(self)
+  pub fn data_mut(&'a mut self) -> PageData<&'a mut [u8]> {
+    PageData::from(Self::slice_data_mut(self.0, self.0.len()))
   }
 }
 
@@ -56,8 +48,8 @@ impl<'a> Page<'a> {
 impl<'a> Page<'a> {
   pub fn try_alloc(addr: usize, pid: usize, cid: usize) -> Result<Self> {
     let vlen = page_class::size_of(cid);
-    let swip = FrameSWIP::pack(pid, cid);
-    let vlds = FrameVLDS::default_value();
+    let swip = PageSWIP::pack(pid, cid);
+    let vlds = PageVLDS::default_value();
 
     let slice = Self::slice_mut(addr, vlen);
     Self::try_alloc_head(slice, swip, vlds)?;
@@ -88,12 +80,6 @@ impl<'a> Page<'a> {
 
   fn slice_data_mut(slice: &mut [u8], data_len: usize) -> &mut [u8] {
     &mut slice[(SWIP_LEN + VLDS_LEN) .. data_len]
-  }
-
-  fn slice(addr: usize, len: usize) -> &'a [u8] {
-    unsafe {
-      std::slice::from_raw_parts(addr as *const u8, len)
-    }
   }
 
   fn slice_mut(addr: usize, len: usize) -> &'a mut [u8] {

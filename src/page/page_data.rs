@@ -9,30 +9,33 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct FrameData<'a>(&'a mut [u8]);
+pub struct PageData<T: AsRef<[u8]>>(T);
 
-impl<'a> From<&'a mut [u8]> for FrameData<'a> {
-  fn from(data: &'a mut [u8]) -> Self {
+impl<T: AsRef<[u8]>> From<T> for PageData<T> {
+  fn from(data: T) -> Self {
     Self(data)
   }
 }
 
-impl<'a> FrameData<'a> {
+impl<T: AsRef<[u8]>> PageData<T> {
   fn as_ref(&self) -> &[u8] {
-    self.0
-  }
-
-  fn as_mut(&mut self) -> &mut [u8] {
-    self.0
+    self.0.as_ref()
   }
 
   // todo: if dest is longer than the frame then only write up to the end of the frame
   pub fn try_read<D: Write>(&self, offset: usize, len: usize, dst: &mut D) -> Result<usize> {
     Ok(dst.write(&self.as_ref()[offset..offset + len])?)
   }
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> PageData<T> {
+  fn as_mut(&mut self) -> &mut [u8] {
+    self.0.as_mut()
+  }
 
   // todo: if src is longer than the frame then only read up to the end of the frame
   pub fn try_write<S: Read>(&mut self, offset: usize, len: usize, src: &mut S) -> Result<usize> {
     Ok(src.read(&mut self.as_mut()[offset .. offset + len])?)
   }
+
 }

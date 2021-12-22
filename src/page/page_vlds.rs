@@ -7,27 +7,27 @@ pub const LATCH_BITS: usize = 0x0F;
 pub const LATCH_MASK: usize = 0xFFFE; // 1111_1111_1111_1110
 
 #[derive(Debug)]
-pub struct FrameVLDS<'a>(&'a AtomicUsize);
+pub struct PageVLDS<'a>(&'a AtomicUsize);
 
-impl<'a> From<&'a AtomicUsize> for FrameVLDS<'a> {
+impl<'a> From<&'a AtomicUsize> for PageVLDS<'a> {
   fn from(vlds: &'a AtomicUsize) -> Self {
     Self(vlds)
   }
 }
 
-impl<'a> From<&'a usize> for FrameVLDS<'a> {
+impl<'a> From<&'a usize> for PageVLDS<'a> {
   fn from(vlds: &'a usize) -> Self {
-    Self::from(Self::make_atomic(vlds))
+    Self::from(Self::make_atomic_ref(vlds))
   }
 }
 
-impl<'a> From<&'a [u8]> for FrameVLDS<'a> {
+impl<'a> From<&'a [u8]> for PageVLDS<'a> {
   fn from(slice: &'a [u8]) -> Self {
     Self::from(Self::make_usize_ref(slice))
   }
 }
 
-impl<'a> FrameVLDS<'a> {
+impl<'a> PageVLDS<'a> {
   // Version 0, Open Latch, Dirty page
   pub fn default_value() -> usize {
     1usize
@@ -59,12 +59,6 @@ impl<'a> FrameVLDS<'a> {
 
   // Private Helpers
 
-  fn make_atomic(atomic_ref: &usize) -> &AtomicUsize {
-    unsafe {
-      &(*(atomic_ref as *const usize as *const AtomicUsize))
-    }
-  }
-
   fn pack_dirty(value: usize, dirty: usize) -> usize {
     (value & !DIRTY_MASK) | (dirty & DIRTY_MASK)
   }
@@ -86,7 +80,7 @@ impl<'a> FrameVLDS<'a> {
   }
 }
 
-impl<'a> FrameVLDS<'a> {
+impl<'a> PageVLDS<'a> {
   fn vlds(&self) -> &AtomicUsize {
     self.0
   }

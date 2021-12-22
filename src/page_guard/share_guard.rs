@@ -1,13 +1,13 @@
 use anyhow::{ Result };
-use crate::{ FrameData, FrameVLDS };
+use crate::{ Page };
 
 #[derive(Debug)]
-pub struct ShareGuard<'a>(&'a FrameVLDS<'a>, &'a FrameData<'a>);
+pub struct ShareGuard<'a>(&'a Page<'a>);
 
 // Associated
 
 impl<'a> ShareGuard<'a> {
-  pub fn try_new(_: &'a FrameVLDS<'a>, _: &'a FrameData<'a>) -> Result<Self> {
+  pub fn try_new(_: &'a Page<'a>) -> Result<Self> {
     todo!()
 
     // pub fn lock_shared(&mut self) -> Option<SharedPageGuard<'a>> {

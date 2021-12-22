@@ -6,7 +6,7 @@ use std::{
   ops::{ Deref, DerefMut }
 };
 
-use crate::{ FrameVLDS, Page };
+use crate::{PageVLDS, Page };
 
 #[derive(Debug)]
 pub struct WriteGuard<'a>(&'a mut Page<'a>);
@@ -39,7 +39,7 @@ impl<'a> WriteGuard<'a> {
   }
 
   pub fn write<R: Read>(&'a mut self, offset: usize, len: usize, data: &mut R) -> Result<usize> {
-    Ok(self.data().try_write(offset, len, data)?)
+    Ok(self.data_mut().try_write(offset, len, data)?)
   }
 }
 
@@ -49,22 +49,22 @@ impl<'a> WriteGuard<'a> {
   pub fn try_new(page: &'a mut Page<'a>) -> Result<Self> {
     let vlds = page.vlds();
     let mut value = vlds.value();
-    let mut latch = FrameVLDS::latch(value);
+    let mut latch = PageVLDS::latch(value);
 
     loop {
-      if FrameVLDS::is_open(latch) {
+      if PageVLDS::is_open(latch) {
         match vlds.latch_write() {
           Err(_) => continue,
           Ok(_) => return Ok(Self(page))
         }
       }
 
-      while !FrameVLDS::is_open(FrameVLDS::latch(vlds.value())) {
+      while !PageVLDS::is_open(PageVLDS::latch(vlds.value())) {
         spin_loop();
       }
 
       value = vlds.value();
-      latch = FrameVLDS::latch(value);
+      latch = PageVLDS::latch(value);
     }
   }
 }

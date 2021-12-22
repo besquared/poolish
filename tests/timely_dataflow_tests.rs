@@ -3,9 +3,10 @@ use anyhow::{
 };
 
 use std::sync::{
-  Arc, Mutex,
+  Arc,
   atomic::{
-    AtomicUsize, Ordering
+    AtomicUsize,
+    Ordering
   }
 };
 
@@ -59,7 +60,10 @@ fn allocates_pages_in_ops() -> Result<()> {
           for _ in 0..rounds {
             match worker_pages.try_alloc(worker_page_size) {
               Err(err) => panic!("{}", err),
-              Ok(_) => { worker_page_count.fetch_add(1, Ordering::SeqCst); }
+              Ok(mut page) => {
+                worker_pages.try_free(page).unwrap();
+                worker_page_count.fetch_add(1, Ordering::SeqCst);
+              }
             }
           }
         })

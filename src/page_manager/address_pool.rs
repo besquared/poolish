@@ -1,5 +1,6 @@
-mod frame_deque;
-mod frame_pools;
+mod free_pool;
+mod used_pool;
+mod addr_pool;
 
 use anyhow::{
   anyhow, Result
@@ -11,37 +12,32 @@ use std::sync::{ Arc };
 
 use crate::{ MAX_CLASS_ID };
 
-use frame_deque::*;
-use frame_pools::*;
+use free_pool::*;
+use used_pool::*;
+use addr_pool::*;
 
 #[derive(Debug)]
-pub struct FramePool(usize, Arc<MmapMut>, Arc<Mutex<FramePools>>);
+pub struct AddressPool(usize, Arc<MmapMut>, Arc<Mutex<AddrPool>>);
 
-impl FramePool {
-  pub fn cid(&self) -> usize {
+impl AddressPool {
+  fn cid(&self) -> usize {
     self.0
   }
 
-  pub fn data(&self) -> &MmapMut {
+  fn data(&self) -> &MmapMut {
     &self.1.as_ref()
   }
 
-  pub fn pools(&self) -> &Mutex<FramePools> {
+  fn pools(&self) -> &Mutex<AddrPool> {
     &self.2.as_ref()
   }
 
   pub fn alloc(&self) -> Option<usize> {
-    let mut frames = self.pools().lock();
-    if let Some(frame) = frames.free_mut().pop_front() {
-      frames.used_mut().push_back(frame);
-      Some(frame)
-    } else {
-      None
-    }
+    self.pools().lock().alloc()
   }
 
-  pub fn release(&self, address: usize) {
-    todo!("Release frame at address {}", address)
+  pub fn free(&self, addr: usize) -> bool {
+    self.pools().lock().free(addr)
   }
 
   pub fn try_new(pool_size: usize, cid: usize) -> Result<Self> {
@@ -61,9 +57,9 @@ impl FramePool {
       return Err(anyhow!("Page pool size must be divisible by page size: {} / {}", pool_size, frame_size))
     }
 
-    // Allocate virtual memory and frame pools
+    // Allocate virtual memory pools
     let data = Arc::new(MmapMut::map_anon(pool_size)?);
-    let frames = Arc::new(Mutex::new(FramePools::try_new(data.clone(), frame_size)?));
+    let frames = Arc::new(Mutex::new(AddrPool::try_new(data.clone(), frame_size)?));
 
     Ok(Self(cid, data, frames))
   }
