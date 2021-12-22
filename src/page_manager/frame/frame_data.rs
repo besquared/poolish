@@ -8,6 +8,7 @@ use std::{
   io::{ Read, Write }
 };
 
+#[derive(Debug)]
 pub struct FrameData<'a>(&'a mut [u8]);
 
 impl<'a> From<&'a mut [u8]> for FrameData<'a> {

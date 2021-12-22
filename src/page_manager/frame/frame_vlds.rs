@@ -21,6 +21,12 @@ impl<'a> From<&'a usize> for FrameVLDS<'a> {
   }
 }
 
+impl<'a> From<&'a [u8]> for FrameVLDS<'a> {
+  fn from(slice: &'a [u8]) -> Self {
+    Self::from(Self::make_usize_ref(slice))
+  }
+}
+
 impl<'a> FrameVLDS<'a> {
   // Version 0, Open Latch, Dirty page
   pub fn default_value() -> usize {
@@ -69,6 +75,14 @@ impl<'a> FrameVLDS<'a> {
 
   fn pack_version(value: usize, version: usize) -> usize {
     (value & (DIRTY_MASK + LATCH_MASK)) | (version << DIRTY_BITS << LATCH_BITS)
+  }
+
+  fn make_usize_ref(slice: &[u8]) -> &usize {
+    unsafe { &*(slice as *const _ as *const usize) }
+  }
+
+  fn make_atomic_ref(atomic_ref: &usize) -> &AtomicUsize {
+    unsafe { &(*(atomic_ref as *const usize as *const AtomicUsize)) }
   }
 }
 

@@ -31,27 +31,28 @@ impl PageManager {
     self.2.load(Ordering::Acquire)
   }
 
-  pub fn try_free(&self, page: &mut Page) -> Result<()> {
+  pub fn try_free<'a>(&self, page: &'a mut Page<'a>) -> Result<()> {
     let guard = page.try_write()?;
-    let swip = guard.frame().try_swip()?;
-    let value = FrameSWIP::cid(swip.value());
-    self.decrement_used(page_class::size_of(value));
+    let swip = guard.swip().value();
+    self.decrement_used(page_class::size_of(FrameSWIP::cid(swip)));
+
     Ok(())
   }
 
+  // todo: make this more thread-safe
   pub fn try_alloc(&self, len: u32) -> Result<Page> {
     let cid = page_class::to_fit(len)?;
     let idx = page_class::index_of(cid);
 
     match self.try_frame_pool(idx) {
-      Ok(frames) => {
-        if let Some(address) = frames.alloc() {
+      Ok(addresses) => {
+        if let Some(address) = addresses.alloc() {
           let pid = self.page_id_pool().next();
           self.increment_used(page_class::size_of(cid));
-          return match Frame::try_activate(address, pid, cid) {
+          return match Page::try_alloc(address, pid, cid) {
             Err(err) => {
-              // TODO: What should we do if we can't activate a frame?
-              frames.release(address);
+              // todo: What should we do if we can't activate a frame?
+              addresses.release(address);
               Err(err)
             }
 

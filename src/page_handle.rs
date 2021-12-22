@@ -14,10 +14,6 @@ impl<'a> From<FrameSWIP<'a>> for PageHandle<'a> {
 }
 
 impl<'a> PageHandle<'a> {
-  //
-  // I think it would be good to make a PageSWIP for convenience
-  //  In theory though we should
-  //
   pub fn swip(&self) -> PageSWIP {
     PageSWIP::from(self.value())
   }

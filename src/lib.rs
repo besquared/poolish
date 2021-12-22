@@ -10,8 +10,6 @@ pub use page_class::*;
 pub use page_handle::*;
 pub use page_manager::*;
 
-pub const PID_LEN: usize = 8;
-pub const CLASS_LEN: usize = 1;
-pub const DIRTY_LEN: usize = 1;
-pub const LATCH_LEN: usize = 8;
-pub const HEADER_LEN: usize = PID_LEN + CLASS_LEN + DIRTY_LEN + LATCH_LEN;
+pub const SWIP_LEN: usize = std::mem::size_of::<usize>();
+pub const VLDS_LEN: usize = std::mem::size_of::<usize>();
+pub const HEADER_LEN: usize = SWIP_LEN + VLDS_LEN;

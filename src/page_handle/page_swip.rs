@@ -1,6 +1,3 @@
-use anyhow::Result;
-use crate::{ Frame, Page };
-
 pub const CID_BITS: usize = 0x0006;
 pub const CID_MASK: usize = 0x02FF;
 
@@ -73,13 +70,6 @@ pub struct SwizzledPageSWIP(usize);
 impl From<usize> for SwizzledPageSWIP {
   fn from(swip: usize) -> Self {
     Self(swip)
-  }
-}
-
-impl TryInto<Page> for SwizzledPageSWIP {
-  type Error = anyhow::Error;
-  fn try_into(self) -> Result<Page> {
-    Ok(Page::from(Frame::try_from(self.address())?))
   }
 }
 

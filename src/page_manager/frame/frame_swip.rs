@@ -21,7 +21,13 @@ impl<'a> From<&'a AtomicUsize> for FrameSWIP<'a> {
 
 impl<'a> From<&'a usize> for FrameSWIP<'a> {
   fn from(swip: &'a usize) -> Self {
-    Self::from(Self::make_atomic(swip))
+    Self::from(Self::make_atomic_ref(swip))
+  }
+}
+
+impl<'a> From<&'a [u8]> for FrameSWIP<'a> {
+  fn from(slice: &'a [u8]) -> Self {
+    Self::from(Self::make_usize_ref(slice))
   }
 }
 
@@ -62,9 +68,11 @@ impl<'a> FrameSWIP<'a> {
     (value & (TAG_MASK + CID_MASK)) | (pid << TAG_BITS << CID_BITS)
   }
 
-  fn make_atomic(atomic_ref: &usize) -> &AtomicUsize {
-    unsafe {
-      &(*(atomic_ref as *const usize as *const AtomicUsize))
-    }
+  fn make_usize_ref(slice: &[u8]) -> &usize {
+    unsafe { &*(slice as *const _ as *const usize) }
+  }
+
+  fn make_atomic_ref(atomic_ref: &usize) -> &AtomicUsize {
+    unsafe { &(*(atomic_ref as *const usize as *const AtomicUsize)) }
   }
 }
