@@ -1,5 +1,9 @@
 use std::sync::atomic::{ AtomicUsize, Ordering };
 
+/**
+ * A versioned latch with 4
+ */
+
 pub const DIRTY_BITS: usize = 0x01;
 pub const DIRTY_MASK: usize = 0x01;   // 0001
 

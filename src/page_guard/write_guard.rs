@@ -34,6 +34,8 @@ impl<'a> DerefMut for WriteGuard<'a> {
 // Methods
 
 impl<'a> WriteGuard<'a> {
+  // todo: Add ability to downgrade this to a shared lock via Into<ShareGuard<'a>>
+
   pub fn read<W: Write>(&'a self, offset: usize, len: usize, dest: &mut W) -> Result<usize> {
     Ok(self.data().try_read(offset, len, dest)?)
   }
@@ -46,6 +48,7 @@ impl<'a> WriteGuard<'a> {
 // Associated
 
 impl<'a> WriteGuard<'a> {
+  // A very unfair test and spin lock
   pub fn try_new(page: &'a mut Page<'a>) -> Result<Self> {
     let vlds = page.vlds();
     let mut value = vlds.value();
@@ -59,6 +62,7 @@ impl<'a> WriteGuard<'a> {
         }
       }
 
+      // Works well for fast latches, probably bad for slow latches
       while !PageVLDS::is_open(PageVLDS::latch(vlds.value())) {
         spin_loop();
       }

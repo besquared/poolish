@@ -12,8 +12,8 @@ system (DRAM) and the secondary storage system (Disk/SSD/NVMe) as necessary.
 The main goals are:
 
 1. Variable length pages
-2. High hit rate efficiency
-3. Support for hundreds of concurrent threads
+2. Operation in highly concurrent environments
+3. Support for OLAP workloads with semi-frequent updates
 
 The system uses several strategies, described in detail in the papers above, and summarized as:
 
