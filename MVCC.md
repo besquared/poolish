@@ -1,6 +1,11 @@
 ### Notes 2021-12-24
 
-We are going to try and do the MVCC strategy that HyPer uses.
+We are going to try and do the MVCC strategy that HyPer uses. It has the following properties
+
+* It keeps versioned in transactions undo buffers
+* It orders version pointers from newest to oldest
+* It performs optimistic reads with a validity check on commit
+* It uses logical (tuple id) pointers to manage secondary indexes
 
 This system has several features:
 
@@ -81,7 +86,54 @@ If any of the above are true then we must abort the transaction
 After successful validation the transaction is committed by first writing its commit into the redo log. After that, all
 of the transaction's timestamps are changed to its newly assigned commit timestamp. 
 
-### Examples and Questions
+## Examples
+
+```
+balances
++--------+--------+--------+
+| name   | amount | active |
+|--------+--------+--------|
+| Sally  |    100 |      t |
+| Jordan |     50 |      t |
+| Marcus |    150 |      t |
++--------+--------+--------+
+```
+
+### Write-Write Conflicts
+
+```
+T1                  | T2
+--------------------+-------------------
+                    | BEGIN
+                    |
+BEGIN               |
+                    |
+                    | UPDATE balances
+                    |    SET amount = 10
+                    |  WHERE name = 'Marcus'
+                    |
+UPDATE balances     |
+   SET amount = 11  |
+ WHERE amount <= 10 |
+          X         |
+                    |
+                    | COMMIT
+--------------------+---------------------
+```
+
+If two transactions try and write to the same attribute we abort the second one (first writer wins). In order
+to determine this we can simply look at the version value of the in-place attribute and see that it is >= 2^63
+which means that it is currently being operated on by an uncommitted transaction.
+
+In the example above we would abort transaction T1 because when it attempts to to write the value `amount = 11` when
+it sees that another transaction (T2), which is uncommitted, has made a modification to a value of a that
+
+### Read Committed
+
+TODO: Talk here about why the delta undo logs are good enough for snapshot isolation
+
+### Serializabilty
+
 
 T1:
 
@@ -96,27 +148,7 @@ T2:
 -- Reads all values d of T for the records where c >= 200
 -- This read is not affected by T1 because T1 only updated the attribute a
 
-T1               | T2
------------------+-------------------
-                 | BEGIN
-                 |
-BEGIN            |
-                 |
-                 | UPDATE T
-                 |    SET a = 1000
-                 |  WHERE c = 1
-                 |
-                 | COMMIT
-                 |
-UPDATE T         |
-   SET a = 1     |
- WHERE b >= 100  |
-                 |
-COMMIT???        |
------------------+---------------------
-
-If two transactions try and write to the same attribute we abort the second one. (First writer wins).
-If a write transaction commits before another but after it started then we need to make sure that the second
+If a write transaction commits before another, but after then we need to make sure that the second
 transaction didn't update any tuples that the first read.
 
-In the case of T1 above we read all tuples where b >= 100 due to the UPDATE predicate. We need t
+In the case of T1 above we read all tuples where b >= 100 due to the UPDATE predicate.
