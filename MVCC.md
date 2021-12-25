@@ -81,45 +81,42 @@ If any of the above are true then we must abort the transaction
 After successful validation the transaction is committed by first writing its commit into the redo log. After that, all
 of the transaction's timestamps are changed to its newly assigned commit timestamp. 
 
-### Examples and open questions
+### Examples and Questions
 
-T1
+T1:
 
--- Updates all values of a where b > 100 (also values c > 200)
+-- Given: attribute c has the value of c = 100 + b (not known ahead of time)
+-- Updates all values of a where b > 100 (which also includes values c > 200 )
 
-UPDATE T
-   SET a = 1
- WHERE b >= 100
-
-T2
+T2:
 
 -- Reads all attributes of T for the records where c = 1024
 -- The read is affected by T1 because it reads from the attribute a
 
-SELECT *
-  FROM T
- WHERE c = 1024
-
 -- Reads all values d of T for the records where c >= 200
 -- This read is not affected by T1 because T1 only updated the attribute a
 
-SELECT d, COUNT(1)
-  FROM T
- WHERE c >= 200
- GROUP BY d
- ORDER BY d
+T1               | T2
+-----------------+-------------------
+                 | BEGIN
+                 |
+BEGIN            |
+                 |
+                 | UPDATE T
+                 |    SET a = 1000
+                 |  WHERE c = 1
+                 |
+                 | COMMIT
+                 |
+UPDATE T         |
+   SET a = 1     |
+ WHERE b >= 100  |
+                 |
+COMMIT???        |
+-----------------+---------------------
 
-In order to do this we're going to have to evaluate this predicate on an object by object basis and not just
-a value by value basis. We need to tree the undo buffers as if they were indexes back into the dataset itself.
+If two transactions try and write to the same attribute we abort the second one. (First writer wins).
+If a write transaction commits before another but after it started then we need to make sure that the second
+transaction didn't update any tuples that the first read.
 
-In the example above we have to be able to figure out:
-
-Does the attribute predicate space of T1:
-
-(a, b >= 100)
-
-intersect with the attribute predicate space of T2:
-
-(*, c = 1024) || (d, c >= 200)
-
-Now we know from the example that b >= 100 does intersect with c = 1024. But I don't under
+In the case of T1 above we read all tuples where b >= 100 due to the UPDATE predicate. We need t
