@@ -2,7 +2,7 @@
 
 ### Model
 
-The model of our system is a shared forest of B+Trees
+The model of our system is a forest of B+Trees built on top of a shared virtual memory system
 
 ### Clustering
 

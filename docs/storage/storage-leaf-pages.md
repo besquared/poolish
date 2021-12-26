@@ -1,7 +1,6 @@
-### Page Structure
+## Leaf Page Storage
 
 ```
-
 struct Page {
   swip: usize,
   vlds: usize, // vers, latch, dirty
@@ -11,7 +10,7 @@ struct Page {
 // 1 bit per value validity
 // 1 bit per value nullity
 
-struct DataPage<T> : Page {    
+struct DataPage<T> : Page {
   next: usize, // pointer to next values pages
   past: usize, // pointer to the newest past version
 
@@ -44,7 +43,6 @@ b = 2    // bits for bitmaps
 p = 4096 // bits per page
 h = 512  // bits per page head
 
-bits_per_bitmap = (1 + (p / (v + b)) / 64) * 64      // relies on flooring of integer division
-number_of_values = (p - (bits_per_bitmap * 2)) / v   // relies on flooring of integer division
-
+bits_per_bitmap = (1 + (p / (v + b)) / 64) * 64      // relies on integer division truncation
+number_of_values = (p - (bits_per_bitmap * 2)) / v   // relies on integer division truncation
 ```

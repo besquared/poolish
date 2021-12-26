@@ -2,7 +2,8 @@
 
 I want to think about a system where we keep all data values in the leaf nodes of the b+tree itself.
 We could then implement an MVCC system where writes to a specific page cause a copy of that page instead.
-These pages would be versioned and chained together N2O and the garbage collector would compact them at a transaction level.
+These pages would be versioned and chained together N2O and the garbage collector would compact them at a transaction
+level.
 
 Pros:
 
@@ -20,7 +21,7 @@ Cons:
 
 How can we mitigate some of these cons?
 
-1. We can have pages that are very small potentially even as small as 1024b or maybe even 512b
+1. We can have pages that are very small potentially even as small as 1024b for some data types
 
 Could we change leaf page sizes on the fly? Could we find leaf nodes that are frequently updated
 and split them into smaller pages so that updates would potentially only impact one page or the other?
@@ -81,8 +82,8 @@ When do we merge pages? There isn't an explicit action that might cause us to me
 harm to the system generally so it might be ok to leave them. The garbage collector could come back through to "hot" access
 paths (maintained by the buffer manager as an atomic counter on the page). If a page has a high read to write ratio then it's
 probably a candidate for merging. Since the trunk pages also have these counters the GC can use that information to make
-decisions as well. When the GC merges trunk pages it should reset the read and write counters back to zero in order to "clear" the page and allow
-new statistics to begin to collect.
+decisions as well. When the GC merges trunk pages it should reset the read and write counters back to zero in order to "clear
+the page and allow new statistics to begin to collect.
 
 We know the r/w access ratio of the root, the intermediate nodes, and all of the leaf nodes and their value chains.
 

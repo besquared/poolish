@@ -23,4 +23,4 @@ A collection of nodes is called a pod
 A database is stored as a directory on the SSP
 A database can only be accessed by one pod at a time
 Each table in the database is represented as a B+Tree
-The B+Tree structure is an overlay onto a virtual memory system
+The B+Tree structure is an overlay onto a shared virtual memory system
