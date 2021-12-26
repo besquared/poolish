@@ -215,3 +215,51 @@ We know the r/w access ratio of the root, the intermediate nodes, and all of the
 In order to know what a good R/W ratio target would be we need to understand how much worse it is for the operators to
 use block sizes less than the optimal size. By localizing writes s.t. pages hold significantly less than the amount of
 data that fits into L1 cache for an operation we're leaving some performance on the table.
+
+### Page Structure
+
+```
+
+struct Page {
+  swip: usize,
+  vlds: usize, // vers, latch, dirty
+}
+
+// 512 bits of state information
+// 1 bit per value validity
+// 1 bit per value nullity
+
+struct DataPage<T> : Page {    
+  next: usize, // pointer to next values pages
+  past: usize, // pointer to the newest past version
+
+  // Used by the GC + Optimizer
+  
+  rcnt: usize, // recent read counter
+  wcnt: usize, // recent write counter  
+  lchg: usize, // lower offset of recently changed values
+  uchg: usize, // upper offset of the recently changed values
+  
+  // The Data Itself
+   
+  valid: Vec<u8>, // bitmap of offsets that aren't deleted
+  nulls: Vec<u8>, // bitmap of offsets that are null
+  values: Vec<T>, // data values
+}
+
+
+Example u8 values in 1024b page
+
+512b meta
+ 64b validity
+ 64b nullity
+384b values (48)
+
+Example u8 values in 4096b page
+
+512b meta
+384b validity
+384b nullity
+3074b values (352)
+
+```
