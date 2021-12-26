@@ -1,3 +1,7 @@
+### Notes 2021-12-26
+
+See docs/design.md
+
 ### Notes 2021-12-24
 
 (1) Dataflow language interface: Malloy, Sub-operators as first class citizens (paper), Modularis (ideas), etc.

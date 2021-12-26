@@ -134,7 +134,6 @@ TODO: Talk here about why the delta undo logs are good enough for snapshot isola
 
 ### Serializabilty
 
-
 T1:
 
 -- Given: attribute c has the value of c = 100 + b (not known ahead of time)

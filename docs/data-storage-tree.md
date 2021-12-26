@@ -247,19 +247,22 @@ struct DataPage<T> : Page {
   values: Vec<T>, // data values
 }
 
+Example u8 values in 4kb page
 
-Example u8 values in 1024b page
+4096b page
+ 512b head
+ 384b valid
+ 384b nulls
+2816b values (352 u8 values)
 
-512b meta
- 64b validity
- 64b nullity
-384b values (48)
+General for 8 bit values
 
-Example u8 values in 4096b page
+v = 8    // bits per value
+b = 2    // bits for bitmaps
+p = 4096 // bits per page
+h = 512  // bits per page head
 
-512b meta
-384b validity
-384b nullity
-3074b values (352)
+bits_per_bitmap = (1 + (p / (v + b)) / 64) * 64      // relies on flooring of integer division
+number_of_values = (p - (bits_per_bitmap * 2)) / v   // relies on flooring of integer division
 
 ```
