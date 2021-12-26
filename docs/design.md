@@ -21,7 +21,7 @@ The model of our system is a shared forest of B+Trees
 (1) We use an extended relational algebra model
 (2) The logical objects are tables, attributes, and operators
 (3) We adopt the three-state logic system of the relational algebra
-(4) Tuples are logically partitioned by a *required* unique unsigned integer key
+(4) Tuples are logically partitioned by a user provided unique unsigned integer key
 
 ### Storage
 
@@ -33,9 +33,16 @@ The model of our system is a shared forest of B+Trees
 
 (1) A cluster will tolerate (N-1) / 2 member failures
 
+### Transitions
+
+(1) Logical partitions are assigned to workers using a consistent hashing policy
+(2) When a member joins the cluster it becomes responsible for a subset of partitions
+(3) When a member leaves the cluster all uncommitted transactions are forcefully aborted
+(4) When a member leaves the cluster its partitions are re-assigned to the remaining workers
+
 ### Atomicity
 
-(1) Atomicity is also provided by the consistency mechanisms
+(1) Atomicity is provided for by the consistency mechanisms
 
 ### Consistency
 
