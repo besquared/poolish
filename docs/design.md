@@ -7,9 +7,9 @@ The model of our system is a forest of B+Trees built on top of a shared virtual 
 ### Clustering
 
 (1) We use a distributed shared-disk cluster architecture
-(2) Membership is managed through the raft consensus protocol
+(2) Membership is managed using the raft consensus protocol
 (3) Each node in the cluster has a fixed number of worker threads
-(4) The number of workers per machine is determined by the # of cores
+(4) The number of workers per machine is based on the # of cores
 (5) Each worker participates as an independent member of the cluster
 
 ### Physical Data Model
